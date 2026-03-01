@@ -24,15 +24,17 @@ distribution.
 #ifndef TINYXML2_INCLUDED
 #define TINYXML2_INCLUDED
 
-#if defined(ANDROID_NDK) || defined(__BORLANDC__) || defined(__QNXNTO__)
+#if defined(ANDROID_NDK) || defined(__BORLANDC__) || defined(__QNXNTO__) || defined(__PS3__) || defined(PS3) || defined(__CELLOS_LV2__)
 #   include <ctype.h>
 #   include <limits.h>
 #   include <stdio.h>
 #   include <stdlib.h>
 #   include <string.h>
-#	if defined(__PS3__)
-#		include <stddef.h>
-#	endif
+#   include <stddef.h>
+#   include <stdarg.h>
+#   if defined(__PS3__) || defined(PS3) || defined(__CELLOS_LV2__)
+#       include "ps3_compat.h"
+#   endif
 #else
 #   include <cctype>
 #   include <climits>
