@@ -198,15 +198,23 @@ int InitRenderDevice()
 #if RETRO_USING_OPENGL
 
 #if RETRO_PLATFORM == RETRO_PS3
-    PSGLinitOptions initOpts;
-    initOpts.enable = PSGL_INIT_MAX_SPUS | PSGL_INIT_INITIALIZE_SPUS;
-    initOpts.maxSPUs = 1;
-    initOpts.initializeSPUs = GL_FALSE;
-    psglInit(&initOpts);
+    // Using NULL for psglInit uses default options which is generally safest
+    psglInit(NULL);
 
-    PSGLdevice *psgl_device = psglCreateDeviceExtended(NULL);
+    PSGLdevice *psgl_device = psglCreateDeviceAuto(GL_ARGB_SCE, GL_DEPTH_COMPONENT24, GL_MULTISAMPLING_NONE_SCE);
+    if (!psgl_device) {
+        PrintLog("PSGL ERROR: psglCreateDeviceAuto failed!");
+        return 0;
+    }
+
     PSGLcontext *psgl_context = psglCreateContext();
-    psglMakeCurrent(psgl_context, psgl_device);
+
+    if (psgl_device && psgl_context) {
+        psglMakeCurrent(psgl_context, psgl_device);
+    } else {
+        PrintLog("PSGL ERROR: Cannot call psglMakeCurrent with NULL context or device!");
+        return 0;
+    }
 #elif RETRO_PLATFORM != RETRO_PS3
     // Init GL
     Engine.glContext = SDL_GL_CreateContext(Engine.window);
@@ -257,7 +265,12 @@ int InitRenderDevice()
         int r               = (c & 0xF800) >> 8;
         int g               = (c & 0x07E0) >> 3;
         int b               = (c & 0x001F) << 3;
+#if RETRO_IS_BIG_ENDIAN
+        // Pack as R, G, B, A in memory for GL_RGBA
+        gfxPalette16to32[c] = (r << 24) | (g << 16) | (b << 8) | 0xFF;
+#else
         gfxPalette16to32[c] = (0xFF << 24) | (b << 16) | (g << 8) | (r << 0);
+#endif
     }
 
     float lightAmbient[4] = { 2.0, 2.0, 2.0, 1.0 };
