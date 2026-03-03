@@ -25,6 +25,7 @@
 #include <cell/dbgfont.h>
 #include <cell/resc.h>
 #include <cell/gcm.h>
+#include <sysutil/sysutil_common.h>
 
 #ifndef BYTE_DEFINED
 #define BYTE_DEFINED

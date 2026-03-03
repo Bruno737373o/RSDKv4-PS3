@@ -1,5 +1,9 @@
 #include "RetroEngine.hpp"
 
+#if RETRO_PLATFORM == RETRO_PS3
+#include "AudioPS3.hpp"
+#endif
+
 #if !RETRO_USE_ORIGINAL_CODE
 bool usingCWD        = false;
 bool engineDebugMode = false;
@@ -31,6 +35,9 @@ inline int GetLowerRate(int intendRate, int targetRate)
 
 bool ProcessEvents()
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    cellSysutilCheckCallback();
+#endif
 #if !RETRO_USE_ORIGINAL_CODE
 #if RETRO_USING_SDL1 || RETRO_USING_SDL2
     while (SDL_PollEvent(&Engine.sdlEvents)) {
@@ -694,6 +701,9 @@ void RetroEngine::Run()
     }
 
     ReleaseAudioDevice();
+#if RETRO_PLATFORM == RETRO_PS3
+    ExitPS3Audio();
+#endif
     ReleaseRenderDevice();
 #if !RETRO_USE_ORIGINAL_CODE
     ReleaseInputDevices();

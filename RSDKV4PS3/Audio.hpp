@@ -1,6 +1,9 @@
 #ifndef AUDIO_H
 #define AUDIO_H
 
+#include <stdlib.h>
+#include <string.h>
+
 #define TRACK_COUNT (0x10)
 #define SFX_COUNT   (0x100)
 #if !RETRO_USE_ORIGINAL_CODE
@@ -21,6 +24,38 @@
 #define LockAudioDevice()   SDL_LockAudio()
 #define UnlockAudioDevice() SDL_UnlockAudio()
 
+#elif RETRO_PLATFORM == RETRO_PS3
+
+#include <sys/synchronization.h>
+#include "ogg/ogg.h"
+#include "vorbis/codec.h"
+#include "vorbis/vorbisfile.h"
+extern sys_lwmutex_t audioMutex;
+#define LockAudioDevice()   sys_lwmutex_lock(&audioMutex, 0xFFFFFFFF)
+#define UnlockAudioDevice() sys_lwmutex_unlock(&audioMutex)
+
+#ifndef RETROENGINE_H
+// Standard types and macros for Audio.hpp if RetroEngine.hpp isn't included yet
+#ifndef BYTE_DEFINED
+#define BYTE_DEFINED
+typedef unsigned char byte;
+#endif
+typedef signed char sbyte;
+typedef unsigned short ushort;
+typedef unsigned int uint;
+
+typedef signed short Sint16;
+typedef signed int Sint32;
+typedef signed long long Sint64;
+typedef unsigned char Uint8;
+typedef unsigned short Uint16;
+typedef unsigned int Uint32;
+typedef unsigned long long Uint64;
+
+#define MEM_ZERO(x)  memset(&(x), 0, sizeof((x)))
+#define MEM_ZEROP(x) memset((x), 0, sizeof(*(x)))
+#endif
+
 #else
 #define LockAudioDevice()   ;
 #define UnlockAudioDevice() ;
@@ -32,6 +67,41 @@ struct TrackInfo {
     uint loopPoint;
 };
 
+#if RETRO_PLATFORM == RETRO_PS3
+struct __attribute__((aligned(16))) StreamInfo {
+    Sint16 buffer[MIX_BUFFER_SAMPLES]; // Align buffer at the start
+    OggVorbis_File vorbisFile;
+    int vorbBitstream;
+    bool trackLoop;
+    uint loopPoint;
+    bool loaded;
+    byte padding[7]; // Ensure 16-byte alignment of the next element in an array
+};
+
+struct __attribute__((aligned(16))) SFXInfo {
+    char name[0x40];
+    Sint16 *buffer;
+    size_t length;
+    bool loaded;
+    byte padding[7];
+};
+
+struct __attribute__((aligned(16))) ChannelInfo {
+    size_t sampleLength;
+    Sint16 *samplePtr;
+    int sfxID;
+    byte loopSFX;
+    sbyte pan;
+    byte padding[6];
+};
+
+struct __attribute__((aligned(16))) StreamFile {
+    byte buffer[MUSBUFFER_SIZE];
+    int fileSize;
+    int filePos;
+    byte padding[8];
+};
+#else
 struct StreamInfo {
     OggVorbis_File vorbisFile;
     int vorbBitstream;
@@ -67,6 +137,7 @@ struct StreamFile {
     int fileSize;
     int filePos;
 };
+#endif
 
 enum MusicStatuses {
     MUSIC_STOPPED = 0,
@@ -93,15 +164,28 @@ extern int musicRatio;
 extern TrackInfo musicTracks[TRACK_COUNT];
 
 extern int currentStreamIndex;
+#if RETRO_PLATFORM == RETRO_PS3
+extern StreamFile streamFile[STREAMFILE_COUNT] __attribute__((aligned(16)));
+extern StreamInfo streamInfo[STREAMFILE_COUNT] __attribute__((aligned(16)));
+#else
 extern StreamFile streamFile[STREAMFILE_COUNT];
 extern StreamInfo streamInfo[STREAMFILE_COUNT];
+#endif
 extern StreamFile *streamFilePtr;
 extern StreamInfo *streamInfoPtr;
 
+#if RETRO_PLATFORM == RETRO_PS3
+extern SFXInfo sfxList[SFX_COUNT] __attribute__((aligned(16)));
+#else
 extern SFXInfo sfxList[SFX_COUNT];
+#endif
 extern char sfxNames[SFX_COUNT][0x40];
 
+#if RETRO_PLATFORM == RETRO_PS3
+extern ChannelInfo sfxChannels[CHANNEL_COUNT] __attribute__((aligned(16)));
+#else
 extern ChannelInfo sfxChannels[CHANNEL_COUNT];
+#endif
 
 #if RETRO_USING_SDL1 || RETRO_USING_SDL2
 extern SDL_AudioSpec audioDeviceFormat;
@@ -110,18 +194,21 @@ extern SDL_AudioSpec audioDeviceFormat;
 int InitAudioPlayback();
 void LoadGlobalSfx();
 
-#if RETRO_USING_SDL1 || RETRO_USING_SDL2
 #if !RETRO_USE_ORIGINAL_CODE
 // These functions did exist, but with different signatures
 void ProcessMusicStream(Sint32 *stream, size_t bytes_wanted);
+#if RETRO_USING_SDL1 || RETRO_USING_SDL2
 void ProcessAudioPlayback(void *data, Uint8 *stream, int len);
+#else
+void ProcessAudioPlayback(Sint16 *stream, int sampleCount);
+#endif
 void ProcessAudioMixing(Sint32 *dst, const Sint16 *src, int len, int volume, sbyte pan);
 #endif
 
 #if !RETRO_USE_ORIGINAL_CODE
-inline void FreeMusInfo()
+inline void FreeMusInfo(bool Lock = true)
 {
-    LockAudioDevice();
+    if (Lock) LockAudioDevice();
 
 #if RETRO_USING_SDL2
     if (streamInfo[currentStreamIndex].stream)
@@ -129,23 +216,17 @@ inline void FreeMusInfo()
     streamInfo[currentStreamIndex].stream = NULL;
 #endif
 
-    ov_clear(&streamInfo[currentStreamIndex].vorbisFile);
+    if (streamInfo[currentStreamIndex].loaded) {
+        ov_clear(&streamInfo[currentStreamIndex].vorbisFile);
+        streamInfo[currentStreamIndex].loaded = false;
+    }
 
 #if RETRO_USING_SDL2
     streamInfo[currentStreamIndex].stream = nullptr;
 #endif
 
-    UnlockAudioDevice();
+    if (Lock) UnlockAudioDevice();
 }
-#endif
-#else
-void ProcessMusicStream() {}
-void ProcessAudioPlayback() {}
-void ProcessAudioMixing() {}
-
-#if !RETRO_USE_ORIGINAL_CODE
-inline void FreeMusInfo() { ov_clear(&streamInfo[currentStreamIndex].vorbisFile); }
-#endif
 #endif
 
 void LoadMusic(void *userdata);
@@ -159,9 +240,7 @@ inline void StopMusic(bool setStatus)
     musicPosition = 0;
 
 #if !RETRO_USE_ORIGINAL_CODE
-    LockAudioDevice();
-    FreeMusInfo();
-    UnlockAudioDevice();
+    FreeMusInfo(true);
 #endif
 }
 

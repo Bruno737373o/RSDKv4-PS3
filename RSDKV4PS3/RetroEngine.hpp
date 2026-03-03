@@ -343,7 +343,6 @@ extern bool engineDebugMode;
 #include "Reader.hpp"
 #include "String.hpp"
 #include "Animation.hpp"
-#include "Audio.hpp"
 #include "Input.hpp"
 #include "Object.hpp"
 #include "Palette.hpp"
@@ -359,6 +358,8 @@ extern bool engineDebugMode;
 #include "Userdata.hpp"
 #include "Debug.hpp"
 #include "ModAPI.hpp"
+
+#include "Audio.hpp"
 
 // Native Entities
 #include "NativeObjects.hpp"

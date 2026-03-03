@@ -75,8 +75,9 @@
     </ClCompile>
     <Link>
       <OutputFormat>ELFFile</OutputFormat>
-      <AdditionalDependencies>libcs.a;libsn.a;libvorbis.a;libvorbisfile.a;libogg.a;libPSGL.a;libPSGLU.a;libPSGLFX.a;libPSGLcgc.a;libsysmodule_stub.a;libresc_stub.a;libm.a;libdbgfont.a;libsysutil_stub.a;libio_stub.a;libaudio_stub.a;libpthread.a;libsysutil_game_stub.a;libnet_stub.a;libcgc.a;libgcm_cmd.a;libgcm_sys_stub.a;libstdc++.a;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libcs.a;libsn.a;libvorbisfile.a;libvorbis.a;libogg.a;libPSGL.a;libPSGLU.a;libPSGLFX.a;libPSGLcgc.a;libsysmodule_stub.a;libresc_stub.a;libm.a;libdbgfont.a;libsysutil_stub.a;libio_stub.a;libaudio_stub.a;libpthread.a;libsysutil_game_stub.a;libnet_stub.a;libcgc.a;libgcm_cmd.a;libgcm_sys_stub.a;libstdc++.a;%(AdditionalDependencies)</AdditionalDependencies>
       <AdditionalLibraryDirectories>C:\usr\local\cell\target\ppu\lib;C:\usr\local\cell\target\ppu\lib\PSGL\RSX\opt;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <GenerateSnMapFile>NormalMapFile</GenerateSnMapFile>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -84,6 +85,7 @@
     <ClCompile Include="..\dependencies\all\tinyxml2\tinyxml2.cpp" />
     <ClCompile Include="Animation.cpp" />
     <ClCompile Include="Audio.cpp" />
+    <ClCompile Include="AudioPS3.cpp" />
     <ClCompile Include="Collision.cpp" />
     <ClCompile Include="Debug.cpp" />
     <ClCompile Include="Drawing.cpp" />
@@ -110,6 +112,7 @@
   <ItemGroup>
     <ClInclude Include="Animation.hpp" />
     <ClInclude Include="Audio.hpp" />
+    <ClInclude Include="AudioPS3.hpp" />
     <ClInclude Include="Collision.hpp" />
     <ClInclude Include="Debug.hpp" />
     <ClInclude Include="Drawing.hpp" />
