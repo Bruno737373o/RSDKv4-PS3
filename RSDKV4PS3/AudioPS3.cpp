@@ -49,16 +49,19 @@ static void audio_event_loop(uint64_t arg) {
         
         for (int i = 0; i < CELL_AUDIO_BLOCK_SAMPLES; i++) {
             while (ctx->input_pos + 1 >= ctx->input_count) {
-                // Carry over the last sample pair for interpolation
+                // Carry over the last sample pair for interpolation.
+                // New audio data starts at index 8. The last samples of the previous block
+                // are therefore at (INPUT_BUFFER_SAMPLES) * 2 + 6 and + 7.
                 if (ctx->input_count > 0) {
-                    ctx->input_buffer[0] = ctx->input_buffer[ctx->input_pos * AUDIO_CHANNELS];
-                    ctx->input_buffer[1] = ctx->input_buffer[ctx->input_pos * AUDIO_CHANNELS + 1];
+                    ctx->input_buffer[6] = ctx->input_buffer[INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS + 6];
+                    ctx->input_buffer[7] = ctx->input_buffer[INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS + 7];
                 }
 
                 // Use a short timeout for the lock to balance responsiveness and stability
                 if (sys_lwmutex_lock(&audioMutex, 1000) == CELL_OK) {
                     // ProcessAudioPlayback expects sample count (frames * channels)
-                    ProcessAudioPlayback(&ctx->input_buffer[AUDIO_CHANNELS], INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS);
+                    // We start at index 8 for 16-byte alignment.
+                    ProcessAudioPlayback(&ctx->input_buffer[8], INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS);
                     sys_lwmutex_unlock(&audioMutex);
                     ctx->input_pos = 0;
                     ctx->input_count = INPUT_BUFFER_SAMPLES + 1;
@@ -73,8 +76,9 @@ static void audio_event_loop(uint64_t arg) {
             }
 
             double fract = ctx->pos - (int)ctx->pos;
-            int p1 = (ctx->input_pos) * AUDIO_CHANNELS;
-            int p2 = (ctx->input_pos + 1) * AUDIO_CHANNELS;
+            // Base offset is 6 (carry-over samples are at 6,7; new data at 8,9...)
+            int p1 = (ctx->input_pos) * AUDIO_CHANNELS + 6;
+            int p2 = (ctx->input_pos + 1) * AUDIO_CHANNELS + 6;
 
             for (int c = 0; c < AUDIO_CHANNELS; c++) {
                 float s1 = (float)ctx->input_buffer[p1 + c] / 32768.0f;
@@ -125,9 +129,9 @@ bool InitPS3Audio(uint32_t samplerate, uint32_t buffersize) {
 
     memset(aud_ctx->input_buffer, 0, sizeof(aud_ctx->input_buffer));
     
-    // Initial fill
+    // Initial fill (using index 8 for alignment)
     if (sys_lwmutex_lock(&audioMutex, 1000000) == CELL_OK) {
-        ProcessAudioPlayback(&aud_ctx->input_buffer[AUDIO_CHANNELS], INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS);
+        ProcessAudioPlayback(&aud_ctx->input_buffer[8], INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS);
         sys_lwmutex_unlock(&audioMutex);
         aud_ctx->input_count = INPUT_BUFFER_SAMPLES + 1;
     }

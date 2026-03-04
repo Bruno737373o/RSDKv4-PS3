@@ -54,7 +54,7 @@ SDL_AudioSpec audioDeviceFormat;
 
 #include "AudioPS3.hpp"
 
-sys_lwmutex_t audioMutex;
+sys_lwmutex_t audioMutex __attribute__((aligned(16)));
 
 #define AUDIO_SAMPLES   (512)
 #ifndef AUDIO_FREQUENCY
@@ -72,9 +72,25 @@ sys_lwmutex_t audioMutex;
 
 int InitAudioPlayback()
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    static bool mutex_created = false;
+    if (!mutex_created) {
+        sys_lwmutex_attribute_t mutexAttr;
+        sys_lwmutex_attribute_initialize(mutexAttr);
+        sys_lwmutex_create(&audioMutex, &mutexAttr);
+        mutex_created = true;
+    }
+#endif
+
     StopAllSfx(); //"init"
 
-    PrintLog("PS3: StreamInfo size=%d, SFXInfo size=%d, ChannelInfo size=%d", sizeof(StreamInfo), sizeof(SFXInfo), sizeof(ChannelInfo));
+    PrintLog("PS3: StreamInfo size=%d, SFXInfo size=%d, ChannelInfo size=%d, OggVorbis_File size=%d", sizeof(StreamInfo), sizeof(SFXInfo), sizeof(ChannelInfo), sizeof(OggVorbis_File));
+    PrintLog("PS3: StreamInfo offsets: buffer=%d, loopPoint=%d, trackLoop=%d, loaded=%d, vorbBitstream=%d, vorbisFile=%d", 
+        offsetof(StreamInfo, buffer), offsetof(StreamInfo, loopPoint), offsetof(StreamInfo, trackLoop), 
+        offsetof(StreamInfo, loaded), offsetof(StreamInfo, vorbBitstream), offsetof(StreamInfo, vorbisFile));
+    PrintLog("PS3: ChannelInfo offsets: sampleLength=%d, samplePtr=%d, sfxID=%d, loopSFX=%d, pan=%d",
+        offsetof(ChannelInfo, sampleLength), offsetof(ChannelInfo, samplePtr), offsetof(ChannelInfo, sfxID),
+        offsetof(ChannelInfo, loopSFX), offsetof(ChannelInfo, pan));
 
     for (int i = 0; i < STREAMFILE_COUNT; ++i) {
         if (streamFile[i].buffer == NULL) {
@@ -128,14 +144,6 @@ int InitAudioPlayback()
     }
 #endif // !RETRO_USING_SDL1
 #elif RETRO_PLATFORM == RETRO_PS3
-    static bool mutex_created = false;
-    if (!mutex_created) {
-        sys_lwmutex_attribute_t mutexAttr;
-        sys_lwmutex_attribute_initialize(mutexAttr);
-        sys_lwmutex_create(&audioMutex, &mutexAttr);
-        mutex_created = true;
-    }
-
     if (InitPS3Audio(AUDIO_FREQUENCY, AUDIO_SAMPLES * AUDIO_CHANNELS * 4)) {
         audioEnabled = true;
     }
@@ -1001,7 +1009,7 @@ void LoadSfx(char *filePath, byte sfxID)
                         int rateMul = (srcRate <= 22050) ? 2 : 1;
                         int dstSampleCount = (sampleCount / srcChannels) * 2 * rateMul;
                         
-                        Sint16 *buffer = (Sint16 *)malloc(dstSampleCount * sizeof(Sint16));
+                        Sint16 *buffer = (Sint16 *)memalign(16, dstSampleCount * sizeof(Sint16));
                         Sint16 *src = (Sint16 *)ptr;
                         
                         for (int s = 0; s < dstSampleCount / 2; s++) {
@@ -1033,7 +1041,10 @@ void LoadSfx(char *filePath, byte sfxID)
             delete[] wavData;
         }
         else if (type == 'o') {
-            OggVorbis_File vf;
+            OggVorbis_File *vf = (OggVorbis_File *)memalign(16, sizeof(OggVorbis_File));
+            if (!vf) return;
+            memset(vf, 0, sizeof(OggVorbis_File));
+
             vorbis_info *vinfo;
             int bitstream = -1;
             long samples;
@@ -1041,10 +1052,12 @@ void LoadSfx(char *filePath, byte sfxID)
 
             // Load OGG into a temporary structure instead of sharing with music slots
             PrintLog("PS3: Loading OGG SFX %s", filePath);
-            StreamFile *sfxFile = (StreamFile*)malloc(sizeof(StreamFile));
-            if (!sfxFile) return;
+            StreamFile *sfxFile = (StreamFile*)memalign(16, sizeof(StreamFile));
+            if (!sfxFile) { free(vf); return; }
+            memset(sfxFile, 0, sizeof(StreamFile));
+
             sfxFile->buffer = (byte*)memalign(16, info.vfileSize);
-            if (!sfxFile->buffer) { free(sfxFile); return; }
+            if (!sfxFile->buffer) { free(sfxFile); free(vf); return; }
 
             sfxFile->vpos = 0;
             sfxFile->vsize = (int)info.vfileSize;
@@ -1057,16 +1070,18 @@ void LoadSfx(char *filePath, byte sfxID)
             callbacks.tell_func  = tellVorbis;
             callbacks.close_func = closeVorbis;
 
-            int error = ov_open_callbacks(sfxFile, &vf, NULL, 0, callbacks);
+            PrintLog("PS3: ov_open_callbacks for %s (sfxFile=%p, buffer=%p, size=%d)", filePath, sfxFile, sfxFile->buffer, sfxFile->vsize);
+            int error = ov_open_callbacks(sfxFile, vf, NULL, 0, callbacks);
             if (error != 0) {
                 if (sfxFile->buffer) free(sfxFile->buffer);
                 free(sfxFile);
+                free(vf);
                 PrintLog("failed to load ogg sfx %s error %d!", filePath, error);
                 return;
             }
 
-            vinfo = ov_info(&vf, -1);
-            samples = (long)ov_pcm_total(&vf, -1);
+            vinfo = ov_info(vf, -1);
+            samples = (long)ov_pcm_total(vf, -1);
 
             int channels = vinfo->channels;
             int srcRate = vinfo->rate;
@@ -1077,9 +1092,10 @@ void LoadSfx(char *filePath, byte sfxID)
             size_t maxSamples = (size_t)(samples * 2 * rateMul) + 2048; 
             Sint16 *audioBuf = (Sint16 *)memalign(16, maxSamples * sizeof(Sint16));
             if (!audioBuf) {
+                ov_clear(vf);
+                free(vf);
                 if (sfxFile->buffer) free(sfxFile->buffer);
                 free(sfxFile);
-                ov_clear(&vf);
                 return;
             }
             
@@ -1088,15 +1104,16 @@ void LoadSfx(char *filePath, byte sfxID)
             Sint16 *decodeBuf = (Sint16 *)memalign(16, decodeBufSize);
             if (!decodeBuf) {
                 free(audioBuf);
+                ov_clear(vf);
+                free(vf);
                 if (sfxFile->buffer) free(sfxFile->buffer);
                 free(sfxFile);
-                ov_clear(&vf);
                 return;
             }
 
             size_t samples_written = 0;
-            size_t max_expansion_per_read = (decodeBufSize / 2) * 2 * rateMul; // max stereo samples produced per read
-            while (samples_written + max_expansion_per_read < maxSamples && (read = (int)ov_read(&vf, (char *)decodeBuf, decodeBufSize, 1, 2, 1, &bitstream)) > 0) {
+            PrintLog("PS3: Decoding %s (%ld samples, %d channels, %d rate, %d rateMul)", filePath, samples, channels, srcRate, rateMul);
+            while (samples_written < maxSamples && (read = (int)ov_read(vf, (char *)decodeBuf, decodeBufSize, 1, 2, 1, &bitstream)) > 0) {
                 int samples_read_per_channel = read / (channels * 2);
                 if (samples_read_per_channel == 0) break;
 
@@ -1104,6 +1121,8 @@ void LoadSfx(char *filePath, byte sfxID)
                 Sint16 *dst = audioBuf + samples_written;
 
                 for (int s = 0; s < samples_read_per_channel; s++) {
+                    if (samples_written + 2 * rateMul > maxSamples) break;
+
                     Sint16 valL = src[s * channels];
                     Sint16 valR = (channels > 1) ? src[s * channels + 1] : valL;
                     
@@ -1111,21 +1130,24 @@ void LoadSfx(char *filePath, byte sfxID)
                         dst[0] = valL;
                         dst[1] = valR;
                         dst += 2;
+                        samples_written += 2;
                     }
                 }
-                samples_written += (samples_read_per_channel * 2 * rateMul);
             }
+            PrintLog("PS3: Decoded %s, written=%zu samples", filePath, samples_written);
             if (read < 0) {
                 free(audioBuf);
                 if (decodeBuf) free(decodeBuf);
                 if (sfxFile->buffer) free(sfxFile->buffer);
                 free(sfxFile);
-                ov_clear(&vf);
+                ov_clear(vf);
+                free(vf);
                 PrintLog("failed to read ogg sfx %s error %d!", filePath, read);
                 return;
             }
 
-            ov_clear(&vf);
+            ov_clear(vf);
+            free(vf);
             if (decodeBuf) free(decodeBuf);
             if (sfxFile->buffer) free(sfxFile->buffer);
             free(sfxFile);

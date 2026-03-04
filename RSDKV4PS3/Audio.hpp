@@ -83,19 +83,19 @@ struct RETRO_AUDIO_ALIGN TrackInfo {
 };
 
 struct RETRO_AUDIO_ALIGN StreamInfo {
-    Sint16 buffer[MIX_BUFFER_SAMPLES * 2];
-    uint loopPoint;
+    Sint16 buffer[MIX_BUFFER_SAMPLES]; // Offset 0x0000 (2048 samples = 4096 bytes)
+    OggVorbis_File vorbisFile __attribute__((aligned(16))); // Offset 0x1000
+    int vorbBitstream; // Offset 0x1290 (4752)
     int trackLoop;
+    uint loopPoint;
     int loaded;
-    int vorbBitstream;
 #if RETRO_USING_SDL2
     SDL_AudioStream *stream;
 #endif
 #if RETRO_USING_SDL1
     SDL_AudioSpec spec;
 #endif
-    byte padding[12]; // Keep vorbisFile at a consistent 16-byte aligned offset
-    OggVorbis_File vorbisFile;
+    byte padding[4752]; // Offset 0x12a0 (4768 + 4752 = 9520 bytes total)
 };
 
 struct RETRO_AUDIO_ALIGN SFXInfo {
@@ -107,8 +107,8 @@ struct RETRO_AUDIO_ALIGN SFXInfo {
 };
 
 struct RETRO_AUDIO_ALIGN ChannelInfo {
-    Sint16 *samplePtr;
-    size_t sampleLength;
+    size_t sampleLength; // Offset 0x00
+    Sint16 *samplePtr;   // Offset 0x04
     int sfxID;
     int loopSFX;
     sbyte pan;
