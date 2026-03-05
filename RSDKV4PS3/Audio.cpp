@@ -973,68 +973,64 @@ void LoadSfx(char *filePath, byte sfxID)
 #endif
 #if RETRO_PLATFORM == RETRO_PS3
         if (type == 'w') {
-            // Native WAV loader for PS3
+            // Native WAV loader for PS3 (Big Endian)
             byte *wavData = new byte[info.vfileSize];
             FileRead(wavData, info.vfileSize);
             CloseFile();
 
-            // Simple WAV parser (RIFF, fmt, data)
-            struct WAVHeader {
-                char riff[4];
-                uint32_t fileSize;
-                char wave[4];
-                char fmt[4];
-                uint32_t fmtLen;
-                uint16_t format;
-                uint16_t channels;
-                uint32_t sampleRate;
-                uint32_t byteRate;
-                uint16_t blockAlign;
-                uint16_t bitsPerSample;
-            } *header = (WAVHeader *)wavData;
+#define READ_LE32(p) ((uint32_t)(p)[0] | ((uint32_t)(p)[1] << 8) | ((uint32_t)(p)[2] << 16) | ((uint32_t)(p)[3] << 24))
+#define READ_LE16(p) ((uint16_t)(p)[0] | ((uint16_t)(p)[1] << 8))
 
-            if (strncmp(header->riff, "RIFF", 4) == 0 && strncmp(header->wave, "WAVE", 4) == 0) {
-                // Find 'data' chunk
+            if (strncmp((char *)wavData, "RIFF", 4) == 0 && strncmp((char *)(wavData + 8), "WAVE", 4) == 0) {
                 byte *ptr = wavData + 12;
+                int srcChannels = 0;
+                int srcRate = 0;
+                int bitsPerSample = 0;
+                
+                // Find 'fmt ' and 'data' chunks
                 while (ptr < wavData + info.vfileSize - 8) {
-                    if (strncmp((char *)ptr, "data", 4) == 0) {
-                        uint32_t dataLen = *(uint32_t *)(ptr + 4);
+                    if (strncmp((char *)ptr, "fmt ", 4) == 0) {
+                        srcChannels = READ_LE16(ptr + 10);
+                        srcRate = READ_LE32(ptr + 12);
+                        bitsPerSample = READ_LE16(ptr + 22);
+                    }
+                    else if (strncmp((char *)ptr, "data", 4) == 0) {
+                        uint32_t dataLen = READ_LE32(ptr + 4);
                         ptr += 8;
                         
-                        int srcChannels = header->channels;
-                        int srcRate = header->sampleRate;
-                        int sampleCount = (int)(dataLen / 2); // Sint16 samples in file
-                        
-                        // We want 44100Hz Stereo
-                        int rateMul = (srcRate <= 22050) ? 2 : 1;
-                        int dstSampleCount = (sampleCount / srcChannels) * 2 * rateMul;
-                        
-                        Sint16 *buffer = (Sint16 *)memalign(16, dstSampleCount * sizeof(Sint16));
-                        Sint16 *src = (Sint16 *)ptr;
-                        
-                        for (int s = 0; s < dstSampleCount / 2; s++) {
-                            int srcIdx = (s / rateMul) * srcChannels;
-                            Sint16 valL = src[srcIdx];
-                            // Swap endianness (WAV is LE, PS3 is BE)
-                            valL = (Sint16)(((valL << 8) & 0xFF00) | ((valL >> 8) & 0x00FF));
+                        if (srcChannels > 0 && bitsPerSample == 16) {
+                            int sampleCount = (int)(dataLen / 2); // Total Sint16 samples in file
                             
-                            Sint16 valR = (srcChannels > 1) ? src[srcIdx + 1] : valL;
-                            if (srcChannels > 1)
-                                valR = (Sint16)(((valR << 8) & 0xFF00) | ((valR >> 8) & 0x00FF));
+                            PrintLog("PS3: Loading WAV %s (%d channels, %d Hz, %d bits, %d samples)", filePath, srcChannels, srcRate, bitsPerSample, sampleCount);
+
+                            // We want 44100Hz Stereo
+                            int rateMul = (srcRate <= 22050) ? 2 : 1;
+                            int dstSampleCount = (sampleCount / srcChannels) * 2 * rateMul;
                             
-                            buffer[s * 2 + 0] = valL;
-                            buffer[s * 2 + 1] = valR;
+                            Sint16 *buffer = (Sint16 *)memalign(16, dstSampleCount * sizeof(Sint16));
+                            
+                            for (int s = 0; s < dstSampleCount / 2; s++) {
+                                int srcIdx = (s / rateMul) * srcChannels;
+                                byte *samplePtr = ptr + (srcIdx * 2);
+                                
+                                // Read Little Endian 16-bit and auto-convert to Native Endian (BE on PS3)
+                                Sint16 valL = (Sint16)READ_LE16(samplePtr);
+                                Sint16 valR = (srcChannels > 1) ? (Sint16)READ_LE16(samplePtr + 2) : valL;
+                                
+                                buffer[s * 2 + 0] = valL;
+                                buffer[s * 2 + 1] = valR;
+                            }
+                            
+                            LockAudioDevice();
+                            StrCopy(sfxList[sfxID].name, filePath);
+                            sfxList[sfxID].buffer = buffer;
+                            sfxList[sfxID].length = (size_t)dstSampleCount;
+                            sfxList[sfxID].loaded = true;
+                            UnlockAudioDevice();
                         }
-                        
-                        LockAudioDevice();
-                        StrCopy(sfxList[sfxID].name, filePath);
-                        sfxList[sfxID].buffer = buffer;
-                        sfxList[sfxID].length = (size_t)dstSampleCount;
-                        sfxList[sfxID].loaded = true;
-                        UnlockAudioDevice();
                         break;
                     }
-                    uint32_t chunkSize = *(uint32_t *)(ptr + 4);
+                    uint32_t chunkSize = READ_LE32(ptr + 4);
                     ptr += 8 + chunkSize;
                 }
             }
