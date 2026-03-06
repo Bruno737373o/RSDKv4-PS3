@@ -21,6 +21,11 @@ int renderStateCount = 0;
 RenderState renderStateList[RENDERSTATE_COUNT];
 RenderState currentRenderState;
 
+#if RETRO_PLATFORM == RETRO_PS3
+GLuint vboRetro[2] = { 0, 0 };
+GLuint vboIdx      = 0;
+#endif
+
 void SetIdentityMatrixF(MatrixF *matrix)
 {
     matrix->values[0][0] = 1.0f;
@@ -1077,6 +1082,37 @@ void SetMeshVertexColors(MeshInfo *mesh, byte r, byte g, byte b, byte a)
 void TransferRetroBuffer()
 {
 #if RETRO_USING_OPENGL
+#if RETRO_PLATFORM == RETRO_PS3
+    vboIdx ^= 1;
+    textureList[0].currentID ^= 1;
+    uint texID = textureList[0].currentID ? textureList[0].id2 : textureList[0].id;
+
+    if (convertTo32Bit) {
+        ushort *frameBufferPtr = Engine.frameBuffer;
+        uint *texBufferPtr     = Engine.texBuffer;
+        int count              = 512 * SCREEN_YSIZE;
+        while (count--) {
+            *texBufferPtr++ = gfxPalette16to32[*frameBufferPtr++];
+        }
+
+        glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, vboRetro[vboIdx]);
+        glBufferSubData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0, 512 * SCREEN_YSIZE * 4, Engine.texBuffer);
+
+        glBindTexture(GL_TEXTURE_2D, texID);
+        glTextureReferenceSCE(GL_TEXTURE_2D, 1, 512, 256, 0, GL_ARGB_SCE, 512 * 4, 0);
+        glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
+    }
+    else {
+        // Direct 16-bit reference
+        glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, vboRetro[vboIdx]);
+        glBufferSubData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0, 512 * SCREEN_YSIZE * 2, Engine.frameBuffer);
+
+        glBindTexture(GL_TEXTURE_2D, texID);
+        glTextureReferenceSCE(GL_TEXTURE_2D, 1, 512, 256, 0, GL_BGRA, 512 * 2, 0);
+        glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+#else
     glBindTexture(GL_TEXTURE_2D, textureList[0].id);
     if (convertTo32Bit) {
         ushort *frameBufferPtr = Engine.frameBuffer;
@@ -1088,7 +1124,6 @@ void TransferRetroBuffer()
             texBufferPtr += GFX_LINESIZE;
             frameBufferPtr += GFX_LINESIZE;
         }
-
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, GFX_LINESIZE, SCREEN_YSIZE, GL_RGBA, GL_UNSIGNED_BYTE, Engine.texBuffer);
     }
     else {
@@ -1096,17 +1131,24 @@ void TransferRetroBuffer()
     }
     glBindTexture(GL_TEXTURE_2D, 0);
 #endif
+
+#endif
 }
 void RenderRetroBuffer(int alpha, float z)
 {
     if (vertexListSize < DRAWVERTEX_COUNT && textureList[0].format) {
-        if (renderStateCount < 0 || currentRenderState.id != textureList[0].id) {
+#if RETRO_PLATFORM == RETRO_PS3
+        uint texID = textureList[0].currentID ? textureList[0].id2 : textureList[0].id;
+#else
+        uint texID = textureList[0].id;
+#endif
+        if (renderStateCount < 0 || (uint)currentRenderState.id != texID) {
             if (renderStateCount >= 0) {
                 RenderState *state = &renderStateList[renderStateCount];
                 memcpy(state, &currentRenderState, sizeof(RenderState));
             }
             currentRenderState.indexCount = 0;
-            currentRenderState.id         = textureList[0].id;
+            currentRenderState.id         = texID;
             currentRenderState.useColors  = true;
             currentRenderState.useTexture = true;
             currentRenderState.useFilter  = true;

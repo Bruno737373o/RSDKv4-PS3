@@ -56,6 +56,10 @@ struct TextureInfo {
     float heightN;
     int format;
     uint id;
+#if RETRO_PLATFORM == RETRO_PS3
+    uint id2; // For double buffering the retro buffer
+    int currentID;
+#endif
 };
 
 struct MeshVertex {
@@ -119,6 +123,11 @@ extern MeshInfo meshList[MESH_COUNT];
 extern int renderStateCount;
 extern RenderState renderStateList[RENDERSTATE_COUNT];
 extern RenderState currentRenderState;
+
+#if RETRO_PLATFORM == RETRO_PS3
+extern GLuint vboRetro[2];
+extern GLuint vboIdx;
+#endif
 
 // Matricies
 void SetIdentityMatrixF(MatrixF *matrix);

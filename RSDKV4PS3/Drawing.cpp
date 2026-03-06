@@ -270,10 +270,13 @@ int InitRenderDevice()
     SetupDrawIndexList();
 
     for (int c = 0; c < 0x10000; ++c) {
-        int r               = (c & 0xF800) >> 8;
-        int g               = (c & 0x07E0) >> 3;
-        int b               = (c & 0x001F) << 3;
-#if RETRO_IS_BIG_ENDIAN
+        int r = (c & 0xF800) >> 8;
+        int g = (c & 0x07E0) >> 3;
+        int b = (c & 0x001F) << 3;
+#if RETRO_PLATFORM == RETRO_PS3
+        // PS3 native format is ARGB
+        gfxPalette16to32[c] = (0xFF << 24) | (r << 16) | (g << 8) | b;
+#elif RETRO_IS_BIG_ENDIAN
         // Pack as R, G, B, A in memory for GL_RGBA
         gfxPalette16to32[c] = (r << 24) | (g << 16) | (b << 8) | 0xFF;
 #else
@@ -304,13 +307,24 @@ int InitRenderDevice()
 #endif
 
 #if RETRO_SOFTWARE_RENDER
+#if RETRO_PLATFORM == RETRO_PS3
+    Engine.frameBuffer   = (ushort *)memalign(128, (GFX_LINESIZE * SCREEN_YSIZE) * sizeof(ushort));
+    Engine.frameBuffer2x = (ushort *)memalign(128, (GFX_LINESIZE_DOUBLE * (SCREEN_YSIZE * 2)) * sizeof(ushort));
+#else
     Engine.frameBuffer   = new ushort[GFX_LINESIZE * SCREEN_YSIZE];
     Engine.frameBuffer2x = new ushort[GFX_LINESIZE_DOUBLE * (SCREEN_YSIZE * 2)];
+#endif
     memset(Engine.frameBuffer, 0, (GFX_LINESIZE * SCREEN_YSIZE) * sizeof(ushort));
     memset(Engine.frameBuffer2x, 0, GFX_LINESIZE_DOUBLE * (SCREEN_YSIZE * 2) * sizeof(ushort));
 #endif
+#if RETRO_PLATFORM == RETRO_PS3
+    // Use 512x256 as buffer size to match texture dimensions for full DMA optimization
+    Engine.texBuffer = (uint *)memalign(128, (512 * 256) * sizeof(uint));
+    memset(Engine.texBuffer, 0, (512 * 256) * sizeof(uint));
+#else
     Engine.texBuffer = new uint[GFX_LINESIZE * SCREEN_YSIZE];
     memset(Engine.texBuffer, 0, (GFX_LINESIZE * SCREEN_YSIZE) * sizeof(uint));
+#endif
 
 #endif
 
@@ -556,20 +570,39 @@ void ReleaseRenderDevice(bool refresh)
     if (!refresh) {
         ClearMeshData();
         ClearTextures(false);
+#if RETRO_PLATFORM == RETRO_PS3
+        if (vboRetro[0]) {
+            glDeleteBuffers(2, &vboRetro[0]);
+            vboRetro[0] = 0;
+            vboRetro[1] = 0;
+        }
+#endif
     }
 
 #if !RETRO_USE_ORIGINAL_CODE
 #if RETRO_SOFTWARE_RENDER
+#if RETRO_PLATFORM == RETRO_PS3
+    if (Engine.frameBuffer)
+        free(Engine.frameBuffer);
+    if (Engine.frameBuffer2x)
+        free(Engine.frameBuffer2x);
+#else
     if (Engine.frameBuffer)
         delete[] Engine.frameBuffer;
     if (Engine.frameBuffer2x)
         delete[] Engine.frameBuffer2x;
+#endif
 #if RETRO_USING_SDL2 && !RETRO_USING_OPENGL
     SDL_DestroyTexture(Engine.screenBuffer);
     Engine.screenBuffer = NULL;
 #endif
+#if RETRO_PLATFORM == RETRO_PS3
+    if (Engine.texBuffer)
+        free(Engine.texBuffer);
+#else
     if (Engine.texBuffer)
         delete[] Engine.texBuffer;
+#endif
 
 #if RETRO_USING_SDL1
     SDL_FreeSurface(Engine.screenBuffer);
@@ -721,6 +754,9 @@ void SetScreenDimensions(int width, int height)
 
 void SetScreenSize(int width, int lineSize)
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    lineSize = 512; // Force power-of-two line size for optimal GPU performance
+#endif
     SCREEN_XSIZE        = width;
     SCREEN_CENTERX      = width / 2;
     SCREEN_SCROLL_LEFT  = SCREEN_CENTERX - 8;
@@ -799,6 +835,18 @@ void SetupViewport()
 #if RETRO_USING_OPENGL
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
+
+#if RETRO_PLATFORM == RETRO_PS3
+    if (vboRetro[0] == 0) {
+        glGenBuffers(2, &vboRetro[0]);
+    }
+    for (int i = 0; i < 2; ++i) {
+        glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, vboRetro[i]);
+        // 512 * 256 * 4 bytes for 32-bit ARGB
+        glBufferData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 512 * 256 * 4, NULL, GL_STREAM_DRAW);
+    }
+    glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
+#endif
 #endif
 
     int width2 = 0;
@@ -948,27 +996,61 @@ void SetupViewport()
 #if RETRO_USING_OPENGL
     if (textureList[0].id != 0) {
         glDeleteTextures(1, &textureList[0].id);
+#if RETRO_PLATFORM == RETRO_PS3
+        glDeleteTextures(1, &textureList[0].id2);
+#endif
         transfer = true;
     }
     glGenTextures(1, &textureList[0].id);
+#if RETRO_PLATFORM == RETRO_PS3
+    glGenTextures(1, &textureList[0].id2);
+#endif
     glBindTexture(GL_TEXTURE_2D, textureList[0].id);
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS3
+    convertTo32Bit = true; // Use 32-bit ARGB for native PS3 performance
+#else
     convertTo32Bit = true;
+#endif
+
 #if RETRO_USING_OPENGL
     if (displaySettings.height > 720) {
         convertTo32Bit = true;
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
     }
-    else if (convertTo32Bit)
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
-    else
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, 0);
 
+#if RETRO_PLATFORM == RETRO_PS3
+    GLenum internalFormat = convertTo32Bit ? GL_ARGB_SCE : GL_BGRA;
+    GLenum format         = convertTo32Bit ? GL_ARGB_SCE : GL_BGRA;
+    GLenum type           = convertTo32Bit ? GL_UNSIGNED_INT_8_8_8_8_REV : GL_UNSIGNED_SHORT_1_5_5_5_REV;
+
+    glBindTexture(GL_TEXTURE_2D, textureList[0].id);
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, texWidth, texHeight, 0, format, type, 0);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, Engine.scalingMode ? GL_LINEAR : GL_NEAREST);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, Engine.scalingMode ? GL_LINEAR : GL_NEAREST);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    glBindTexture(GL_TEXTURE_2D, textureList[0].id2);
+    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, texWidth, texHeight, 0, format, type, 0);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, Engine.scalingMode ? GL_LINEAR : GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, Engine.scalingMode ? GL_LINEAR : GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+    textureList[0].currentID = 0;
+#else
+    if (convertTo32Bit) {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, 0);
+    }
+    else {
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texWidth, texHeight, 0, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, 0);
+    }
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, Engine.scalingMode ? GL_LINEAR : GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, Engine.scalingMode ? GL_LINEAR : GL_NEAREST);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+#endif
     glBindTexture(GL_TEXTURE_2D, 0);
 #endif
 
