@@ -10,6 +10,7 @@ enum MultiplayerScreenStates {
     MULTIPLAYERSCREEN_STATE_FLIP,
     MULTIPLAYERSCREEN_STATE_HOSTSCR,
     MULTIPLAYERSCREEN_STATE_JOINSCR,
+    MULTIPLAYERSCREEN_STATE_IPENTER,
     MULTIPLAYERSCREEN_STATE_STARTGAME,
     MULTIPLAYERSCREEN_STATE_DIALOGWAIT,
 };
@@ -17,7 +18,8 @@ enum MultiplayerScreenDrawStates {
     MULTIPLAYERSCREEN_STATEDRAW_NONE = -1,
     MULTIPLAYERSCREEN_STATEDRAW_MAIN,
     MULTIPLAYERSCREEN_STATEDRAW_HOST,
-    MULTIPLAYERSCREEN_STATEDRAW_JOIN
+    MULTIPLAYERSCREEN_STATEDRAW_JOIN,
+    MULTIPLAYERSCREEN_STATEDRAW_IPENTER
 };
 
 enum MultiplayerScreenButton {
@@ -57,6 +59,10 @@ struct NativeEntity_MultiplayerScreen : NativeEntityBase {
     int roomCode;
     NativeEntity_TextLabel *enterCodeLabel[8];
     NativeEntity_TextLabel *enterCodeSlider[2];
+    NativeEntity_TextLabel *ipPrefixLabel;
+    NativeEntity_TextLabel *ipDigitLabel[12];
+    NativeEntity_TextLabel *ipDotLabel[3];
+    int ipDigits[12];
 };
 
 void MultiplayerScreen_Create(void *objPtr);

@@ -94,13 +94,14 @@ void MultiplayerScreen_Create(void *objPtr)
     self->label                  = CREATE_ENTITY(TextLabel);
     self->label->useRenderMatrix = true;
     self->label->fontID          = FONT_HEADING;
-    self->label->scale           = 0.2;
+    self->label->scale           = 0.3;
     self->label->alpha           = 256;
-    self->label->x               = -144.0;
+    self->label->x               = 0.0;
     self->label->y               = 100.0;
     self->label->z               = 16.0;
     self->label->state           = TEXTLABEL_STATE_IDLE;
     SetStringToFont8(self->label->text, "MULTIPLAYER", FONT_HEADING);
+    self->label->alignPtr(self->label, ALIGN_CENTER);
 
     self->meshPanel = LoadMesh("Data/Game/Models/Panel.bin", -2);
     SetMeshVertexColors(self->meshPanel, 0, 0, 0, 0xC0);
@@ -162,7 +163,7 @@ void MultiplayerScreen_Create(void *objPtr)
         self->codeLabel[i]                  = CREATE_ENTITY(TextLabel);
         self->codeLabel[i]->useRenderMatrix = true;
         self->codeLabel[i]->fontID          = FONT_LABEL;
-        self->codeLabel[i]->scale           = 0.15;
+        self->codeLabel[i]->scale           = 0.20;
         self->codeLabel[i]->alpha           = 0;
         self->codeLabel[i]->x               = 0;
         self->codeLabel[i]->y               = 0;
@@ -172,13 +173,13 @@ void MultiplayerScreen_Create(void *objPtr)
 
     SetStringToFont8(self->codeLabel[0]->text, "ROOM CODE", self->codeLabel[0]->fontID);
     self->codeLabel[0]->alignPtr(self->codeLabel[0], ALIGN_CENTER);
+    self->codeLabel[0]->y = 40.0f;
 
     SetStringToFont8(self->codeLabel[1]->text, "UNKNOWN", self->codeLabel[1]->fontID);
     self->codeLabel[1]->alignPtr(self->codeLabel[1], ALIGN_CENTER);
-    self->codeLabel[1]->y -= 20.0f;
+    self->codeLabel[1]->y = 15.0f;
 
-    self->codeLabel[2]->y     = 48.0f;
-    self->codeLabel[2]->scale = 0.20f;
+    self->codeLabel[2]->y     = -40.0f;
     SetStringToFont8(self->codeLabel[2]->text, "WAITING FOR 2P...", self->codeLabel[2]->fontID);
     self->codeLabel[2]->alignPtr(self->codeLabel[2], ALIGN_CENTER);
 
@@ -207,14 +208,59 @@ void MultiplayerScreen_Create(void *objPtr)
         self->enterCodeSlider[i]                  = CREATE_ENTITY(TextLabel);
         self->enterCodeSlider[i]->useRenderMatrix = true;
         self->enterCodeSlider[i]->fontID          = FONT_LABEL;
-        self->enterCodeSlider[i]->scale           = 0.175;
+        self->enterCodeSlider[i]->scale           = 0.25;
         self->enterCodeSlider[i]->alpha           = 0;
-        // self->enterCodeSlider[i]->textX           = -102.0f + (i * 27.2) + 8.0f;
-        self->enterCodeSlider[i]->y     = (i ? -23.0 : -40.0);
-        self->enterCodeSlider[i]->z     = 16.0;
-        self->enterCodeSlider[i]->state = TEXTLABEL_STATE_IDLE;
+        self->enterCodeSlider[i]->y               = 23.0;
+        self->enterCodeSlider[i]->z               = 16.0;
+        self->enterCodeSlider[i]->state           = TEXTLABEL_STATE_IDLE;
         SetStringToFont8(self->enterCodeSlider[i]->text, "V", self->enterCodeSlider[i]->fontID);
         self->enterCodeSlider[i]->alignPtr(self->enterCodeSlider[i], ALIGN_CENTER);
+    }
+
+    self->ipPrefixLabel                  = CREATE_ENTITY(TextLabel);
+    self->ipPrefixLabel->useRenderMatrix = true;
+    self->ipPrefixLabel->fontID          = FONT_LABEL;
+    self->ipPrefixLabel->scale           = 0.3;
+    self->ipPrefixLabel->alpha           = 0;
+    self->ipPrefixLabel->x               = -140.0;
+    self->ipPrefixLabel->y               = 0;
+    self->ipPrefixLabel->z               = 16.0;
+    self->ipPrefixLabel->state           = TEXTLABEL_STATE_IDLE;
+    SetStringToFont8(self->ipPrefixLabel->text, "IP:", FONT_LABEL);
+    self->ipPrefixLabel->alignPtr(self->ipPrefixLabel, ALIGN_CENTER);
+
+    for (int i = 0; i < 12; ++i) {
+        self->ipDigitLabel[i]                  = CREATE_ENTITY(TextLabel);
+        self->ipDigitLabel[i]->useRenderMatrix = true;
+        self->ipDigitLabel[i]->fontID          = FONT_LABEL;
+        self->ipDigitLabel[i]->scale           = 0.3;
+        self->ipDigitLabel[i]->alpha           = 0;
+
+        int octet      = i / 3;
+        int posInOctet = i % 3;
+        self->ipDigitLabel[i]->x     = -105.0f + (octet * 60.0f) + (posInOctet * 15.0f);
+        self->ipDigitLabel[i]->y     = 0;
+        self->ipDigitLabel[i]->z     = 16.0;
+        self->ipDigitLabel[i]->state = TEXTLABEL_STATE_IDLE;
+        self->ipDigitLabel[i]->r     = 255;
+        self->ipDigitLabel[i]->g     = 255;
+        self->ipDigitLabel[i]->b     = 0;
+
+        SetStringToFont8(self->ipDigitLabel[i]->text, "0", FONT_LABEL);
+        self->ipDigitLabel[i]->alignPtr(self->ipDigitLabel[i], ALIGN_CENTER);
+    }
+    for (int i = 0; i < 3; ++i) {
+        self->ipDotLabel[i]                  = CREATE_ENTITY(TextLabel);
+        self->ipDotLabel[i]->useRenderMatrix = true;
+        self->ipDotLabel[i]->fontID          = FONT_LABEL;
+        self->ipDotLabel[i]->scale           = 0.3;
+        self->ipDotLabel[i]->alpha           = 0;
+        self->ipDotLabel[i]->x               = -105.0f + (i * 60.0f) + 45.0f;
+        self->ipDotLabel[i]->y               = 0;
+        self->ipDotLabel[i]->z               = 16.0;
+        self->ipDotLabel[i]->state           = TEXTLABEL_STATE_IDLE;
+        SetStringToFont8(self->ipDotLabel[i]->text, ".", FONT_LABEL);
+        self->ipDotLabel[i]->alignPtr(self->ipDotLabel[i], ALIGN_CENTER);
     }
 }
 
@@ -259,6 +305,9 @@ void MultiplayerScreen_Destroy(void *objPtr)
     for (int i = 0; i < 3; ++i) RemoveNativeObject(self->codeLabel[i]);
     for (int i = 0; i < 8; ++i) RemoveNativeObject(self->enterCodeLabel[i]);
     for (int i = 0; i < 2; ++i) RemoveNativeObject(self->enterCodeSlider[i]);
+    RemoveNativeObject(self->ipPrefixLabel);
+    for (int i = 0; i < 12; ++i) RemoveNativeObject(self->ipDigitLabel[i]);
+    for (int i = 0; i < 3; ++i) RemoveNativeObject(self->ipDotLabel[i]);
     for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) RemoveNativeObject(self->buttons[i]);
     RemoveNativeObject(self->bg);
     RemoveNativeObject(self);
@@ -307,10 +356,17 @@ void MultiplayerScreen_Main(void *objPtr)
     for (int i = 0; i < 8; ++i) {
         if (self->enterCodeLabel[i]) memcpy(&self->enterCodeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
     }
-    if (self->enterCodeSlider[1]) memcpy(&self->enterCodeSlider[1]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-    if (self->enterCodeSlider[0]) {
-        MatrixRotateZF(&self->enterCodeSlider[0]->renderMatrix, DegreesToRad(180));
-        MatrixMultiplyF(&self->enterCodeSlider[0]->renderMatrix, &self->renderMatrix);
+    for (int i = 0; i < 12; ++i) {
+        if (self->ipDigitLabel[i]) memcpy(&self->ipDigitLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    }
+    for (int i = 0; i < 3; ++i) {
+        if (self->ipDotLabel[i]) memcpy(&self->ipDotLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    }
+    if (self->ipPrefixLabel) memcpy(&self->ipPrefixLabel->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    if (self->enterCodeSlider[0]) memcpy(&self->enterCodeSlider[0]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    if (self->enterCodeSlider[1]) {
+        MatrixRotateZF(&self->enterCodeSlider[1]->renderMatrix, DegreesToRad(180));
+        MatrixMultiplyF(&self->enterCodeSlider[1]->renderMatrix, &self->renderMatrix);
     }
 
     switch (self->state) {
@@ -437,15 +493,22 @@ void MultiplayerScreen_Main(void *objPtr)
                 switch (selected) {
                     default: break;
                     case MULTIPLAYERSCREEN_BUTTON_HOST:
+                        useHostServer = true;
+                        StrCopy(networkHost, "127.0.0.1");
+                        WriteSettings();
+
                         self->state         = MULTIPLAYERSCREEN_STATE_FLIP;
                         self->nextState     = MULTIPLAYERSCREEN_STATE_HOSTSCR;
                         self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_HOST;
                         self->flipDir       = 1;
                         break;
                     case MULTIPLAYERSCREEN_BUTTON_JOIN:
+                        useHostServer = false;
+                        WriteSettings();
+
                         self->state         = MULTIPLAYERSCREEN_STATE_FLIP;
-                        self->nextState     = MULTIPLAYERSCREEN_STATE_JOINSCR;
-                        self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_JOIN;
+                        self->nextState     = MULTIPLAYERSCREEN_STATE_IPENTER;
+                        self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_IPENTER;
                         self->flipDir       = 1;
                         break;
                     case MULTIPLAYERSCREEN_BUTTON_JOINROOM: {
@@ -542,6 +605,11 @@ void MultiplayerScreen_Main(void *objPtr)
             CheckKeyDown(&keyDown);
             CheckKeyPress(&keyPress);
 
+            char ipBuf[0x40];
+            sprintf(ipBuf, "IP: %s", publicIP);
+            SetStringToFont8(self->codeLabel[2]->text, ipBuf, self->codeLabel[2]->fontID);
+            self->codeLabel[2]->alignPtr(self->codeLabel[2], ALIGN_CENTER);
+
             if (!self->roomCode) {
                 int code = GetRoomCode();
                 if (code) {
@@ -566,15 +634,6 @@ void MultiplayerScreen_Main(void *objPtr)
                     usePhysicalControls = false;
                 }
                 else {
-                    if (keyPress.A || keyPress.start) {
-                        PlaySfxByName("Menu Select", false);
-#if RETRO_PLATFORM != RETRO_PS3
-                        char buffer[0x30];
-                        int code = GetRoomCode();
-                        sprintf(buffer, "%08X", code);
-                        SDL_SetClipboardText(buffer);
-#endif
-                    }
                     if (keyPress.B) {
                         self->dialog = CREATE_ENTITY(DialogPanel);
                         SetStringToFont8(self->dialog->text,
@@ -586,28 +645,9 @@ void MultiplayerScreen_Main(void *objPtr)
             }
             else {
                 if (touches > 0) {
-                    self->backPressed                                   = CheckTouchRect(128.0, -92.0, 32.0, 32.0) >= 0;
-                    self->buttons[MULTIPLAYERSCREEN_BUTTON_COPY]->state = CheckTouchRect(0, -64.0f,
-                                                                                         ((64.0 * self->buttons[MULTIPLAYERSCREEN_BUTTON_COPY]->scale)
-                                                                                          + self->buttons[MULTIPLAYERSCREEN_BUTTON_COPY]->textWidth)
-                                                                                             * 0.75,
-                                                                                         12.0)
-                                                                          >= 0;
+                    self->backPressed = CheckTouchRect(128.0, -92.0, 32.0, 32.0) >= 0;
                 }
                 else {
-                    self->buttons[MULTIPLAYERSCREEN_BUTTON_COPY]->state |= keyPress.A || keyPress.start;
-                    if (self->buttons[MULTIPLAYERSCREEN_BUTTON_COPY]->state) {
-                        self->buttons[MULTIPLAYERSCREEN_BUTTON_COPY]->state = PUSHBUTTON_STATE_UNSELECTED;
-                        if (keyPress.A || keyPress.start)
-                            usePhysicalControls = true;
-                        PlaySfxByName("Menu Select", false);
-#if RETRO_PLATFORM != RETRO_PS3
-                        char buffer[0x30];
-                        int code = GetRoomCode();
-                        sprintf(buffer, "%08X", code);
-                        SDL_SetClipboardText(buffer);
-#endif
-                    }
                     if (keyPress.B || self->backPressed) {
                         self->backPressed = false;
                         self->dialog      = CREATE_ENTITY(DialogPanel);
@@ -685,8 +725,8 @@ void MultiplayerScreen_Main(void *objPtr)
                     else if (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_PASTE)
                         self->buttons[MULTIPLAYERSCREEN_BUTTON_PASTE]->state = PUSHBUTTON_STATE_SELECTED;
                     else if (self->selectedButton > 4) {
-                        self->enterCodeSlider[0]->x     = self->enterCodeLabel[7 - (self->selectedButton - 5)]->x - 2.5;
-                        self->enterCodeSlider[1]->x     = -(self->enterCodeLabel[7 - (self->selectedButton - 5)]->x - 2.5);
+                        self->enterCodeSlider[0]->x     = self->enterCodeLabel[self->selectedButton - 5]->x;
+                        self->enterCodeSlider[1]->x     = -self->enterCodeLabel[self->selectedButton - 5]->x;
                         self->enterCodeSlider[0]->alpha = 0x100;
                         self->enterCodeSlider[1]->alpha = 0x100;
 
@@ -756,8 +796,8 @@ void MultiplayerScreen_Main(void *objPtr)
                         id = self->touchedUpID;
                     if (id >= 0) {
                         self->selectedButton            = id + 5;
-                        self->enterCodeSlider[0]->x     = self->enterCodeLabel[7 - id]->x - 2.5;
-                        self->enterCodeSlider[1]->x     = -(self->enterCodeLabel[7 - id]->x - 2.5);
+                        self->enterCodeSlider[0]->x     = self->enterCodeLabel[id]->x;
+                        self->enterCodeSlider[1]->x     = -self->enterCodeLabel[id]->x;
                         self->enterCodeSlider[0]->alpha = 0x100;
                         self->enterCodeSlider[1]->alpha = 0x100;
 
@@ -903,6 +943,108 @@ void MultiplayerScreen_Main(void *objPtr)
             }
             break;
         }
+        case MULTIPLAYERSCREEN_STATE_IPENTER: {
+            CheckKeyDown(&keyDown);
+            CheckKeyPress(&keyPress);
+
+            if (usePhysicalControls) {
+                if (touches > 0) {
+                    usePhysicalControls = false;
+                }
+                else {
+                    if (keyPress.left) {
+                        PlaySfxByName("Menu Move", false);
+                        if (self->selectedButton == 5)
+                            self->selectedButton = MULTIPLAYERSCREEN_BUTTON_JOINROOM;
+                        else if (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_JOINROOM)
+                            self->selectedButton = 16;
+                        else
+                            self->selectedButton--;
+                    }
+                    else if (keyPress.right) {
+                        PlaySfxByName("Menu Move", false);
+                        if (self->selectedButton == 16)
+                            self->selectedButton = MULTIPLAYERSCREEN_BUTTON_JOINROOM;
+                        else if (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_JOINROOM)
+                            self->selectedButton = 5;
+                        else
+                            self->selectedButton++;
+                    }
+
+                    if (self->selectedButton != MULTIPLAYERSCREEN_BUTTON_JOINROOM && (keyPress.up || keyPress.down)) {
+                        int digitIdx = self->selectedButton - 5;
+                        if (digitIdx >= 0 && digitIdx < 12) {
+                            int val = self->ipDigits[digitIdx];
+                            if (keyPress.up) {
+                                PlaySfxByName("Menu Move", false);
+                                val = (val + 1) % 10;
+                            }
+                            else if (keyPress.down) {
+                                PlaySfxByName("Menu Move", false);
+                                val = (val + 9) % 10;
+                            }
+                            self->ipDigits[digitIdx] = val;
+                            char buf[2];
+                            sprintf(buf, "%d", val);
+                            SetStringToFont8(self->ipDigitLabel[digitIdx]->text, buf, self->ipDigitLabel[digitIdx]->fontID);
+                        }
+                    }
+
+                    for (int i = 0; i < 12; ++i) self->ipDigitLabel[i]->useColors = false;
+                    self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->state = PUSHBUTTON_STATE_UNSELECTED;
+                    self->enterCodeSlider[0]->alpha                         = 0;
+                    self->enterCodeSlider[1]->alpha                         = 0;
+
+                    if (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_JOINROOM)
+                        self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->state = PUSHBUTTON_STATE_SELECTED;
+                    else if (self->selectedButton >= 5 && self->selectedButton <= 16) {
+                        int digitIdx                    = self->selectedButton - 5;
+                        self->enterCodeSlider[0]->x     = self->ipDigitLabel[digitIdx]->x;
+                        self->enterCodeSlider[1]->x     = -self->ipDigitLabel[digitIdx]->x;
+                        self->enterCodeSlider[0]->alpha = 0x100;
+                        self->enterCodeSlider[1]->alpha = 0x100;
+                        self->ipDigitLabel[digitIdx]->useColors = true;
+                        self->ipDigitLabel[digitIdx]->r         = 255;
+                        self->ipDigitLabel[digitIdx]->g         = 255;
+                        self->ipDigitLabel[digitIdx]->b         = 0;
+                    }
+
+                    if (keyPress.start || keyPress.A) {
+                        if (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_JOINROOM) {
+                            PlaySfxByName("Menu Select", false);
+                            // Parse IP from digits
+                            char newIP[64];
+                            int offset = 0;
+                            for (int i = 0; i < 4; ++i) {
+                                int val = self->ipDigits[i * 3] * 100 + self->ipDigits[i * 3 + 1] * 10 + self->ipDigits[i * 3 + 2];
+                                sprintf(newIP + offset, "%d", val);
+                                offset = strlen(newIP);
+                                if (i < 3)
+                                    newIP[offset++] = '.';
+                            }
+                            newIP[offset] = '\0';
+
+                            StrCopy(networkHost, newIP);
+                            WriteSettings();
+                            DisconnectNetwork();
+                            InitNetwork();
+
+                            self->state         = MULTIPLAYERSCREEN_STATE_FLIP;
+                            self->nextState     = MULTIPLAYERSCREEN_STATE_JOINSCR;
+                            self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_JOIN;
+                            self->flipDir       = 1;
+                        }
+                    }
+                    else if (keyPress.B) {
+                        PlaySfxByName("Menu Back", false);
+                        self->state         = MULTIPLAYERSCREEN_STATE_FLIP;
+                        self->nextState     = MULTIPLAYERSCREEN_STATE_MAIN;
+                        self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_MAIN;
+                    }
+                }
+            }
+            break;
+        }
         case MULTIPLAYERSCREEN_STATE_DIALOGWAIT: {
             if (self->dialog->selection == DLG_NO || self->dialog->selection == DLG_OK) {
                 self->state = MULTIPLAYERSCREEN_STATE_HOSTSCR;
@@ -933,6 +1075,9 @@ void MultiplayerScreen_Main(void *objPtr)
             for (int i = 0; i < 3; ++i) self->codeLabel[i]->alpha = 0;
             for (int i = 0; i < 8; ++i) self->enterCodeLabel[i]->alpha = 0;
             for (int i = 0; i < 2; ++i) self->enterCodeSlider[i]->alpha = 0;
+            if (self->ipPrefixLabel) self->ipPrefixLabel->alpha = 0;
+            for (int i = 0; i < 12; ++i) self->ipDigitLabel[i]->alpha = 0;
+            for (int i = 0; i < 3; ++i) self->ipDotLabel[i]->alpha = 0;
 
             self->selectedButton = MULTIPLAYERSCREEN_BUTTON_HOST;
             vsPlayerID           = -1;
@@ -943,9 +1088,11 @@ void MultiplayerScreen_Main(void *objPtr)
             for (int i = 0; i < 3; ++i) self->codeLabel[i]->alpha = 0x100;
             for (int i = 0; i < 8; ++i) self->enterCodeLabel[i]->alpha = 0;
             for (int i = 0; i < 2; ++i) self->enterCodeSlider[i]->alpha = 0;
+            if (self->ipPrefixLabel) self->ipPrefixLabel->alpha = 0;
+            for (int i = 0; i < 12; ++i) self->ipDigitLabel[i]->alpha = 0;
+            for (int i = 0; i < 3; ++i) self->ipDotLabel[i]->alpha = 0;
 
-            self->selectedButton                                = MULTIPLAYERSCREEN_BUTTON_COPY;
-            self->buttons[MULTIPLAYERSCREEN_BUTTON_COPY]->alpha = 0x100;
+            self->selectedButton = -1;
 
             self->roomCode = 0;
             SetStringToFont8(self->codeLabel[1]->text, "FETCHING...", self->codeLabel[1]->fontID);
@@ -966,8 +1113,58 @@ void MultiplayerScreen_Main(void *objPtr)
             SendServerPacket(send, true);
             break;
         }
+        case MULTIPLAYERSCREEN_STATEDRAW_IPENTER: {
+            PrintLog("MultiplayerScreen - DrawState: IPENTER");
+            for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) self->buttons[i]->alpha = 0;
+            self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->alpha = 0x100;
+            self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->x     = 0.0;
+            self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->state = PUSHBUTTON_STATE_SCALED;
+            SetStringToFont8(self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->text, "CONFIRM", FONT_LABEL);
+
+            for (int i = 0; i < 3; ++i) self->codeLabel[i]->alpha = 0;
+            for (int i = 0; i < 8; ++i) self->enterCodeLabel[i]->alpha = 0;
+
+            // Initialize IP digits from current networkHost
+            int ip[4] = { 0, 0, 0, 0 };
+            sscanf(networkHost, "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
+            for (int i = 0; i < 4; ++i) {
+                char buf[4];
+                sprintf(buf, "%03d", ip[i]);
+                self->ipDigits[i * 3 + 0] = buf[0] - '0';
+                self->ipDigits[i * 3 + 1] = buf[1] - '0';
+                self->ipDigits[i * 3 + 2] = buf[2] - '0';
+            }
+
+            if (self->ipPrefixLabel) self->ipPrefixLabel->alpha = 0x100;
+            for (int i = 0; i < 12; ++i) {
+                self->ipDigitLabel[i]->alpha     = 0x100;
+                self->ipDigitLabel[i]->useColors = false;
+                char buf[2];
+                sprintf(buf, "%d", self->ipDigits[i]);
+                SetStringToFont8(self->ipDigitLabel[i]->text, buf, self->ipDigitLabel[i]->fontID);
+                self->ipDigitLabel[i]->alignPtr(self->ipDigitLabel[i], ALIGN_CENTER);
+            }
+            for (int i = 0; i < 3; ++i) {
+                self->ipDotLabel[i]->alpha = 0x100;
+                self->ipDotLabel[i]->alignPtr(self->ipDotLabel[i], ALIGN_CENTER);
+            }
+
+            self->ipDigitLabel[0]->useColors = true;
+            self->selectedButton             = 5;
+
+            self->enterCodeSlider[0]->x     = self->ipDigitLabel[0]->x;
+            self->enterCodeSlider[1]->x     = -self->ipDigitLabel[0]->x;
+            self->enterCodeSlider[0]->alpha = 0x100;
+            self->enterCodeSlider[1]->alpha = 0x100;
+            break;
+        }
         case MULTIPLAYERSCREEN_STATEDRAW_JOIN: {
             PrintLog("MultiplayerScreen - DrawState: JOIN");
+            self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->x     = -56.0;
+            self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->state = PUSHBUTTON_STATE_SCALED;
+            SetStringToFont8(self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->text, "JOIN ROOM", FONT_LABEL);
+            self->buttons[MULTIPLAYERSCREEN_BUTTON_PASTE]->x     = 64.0;
+            self->buttons[MULTIPLAYERSCREEN_BUTTON_PASTE]->state = PUSHBUTTON_STATE_SCALED;
             for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) self->buttons[i]->alpha = 0;
             self->selectedButton = MULTIPLAYERSCREEN_BUTTON_COUNT;
             self->touchedUpID    = -1;
@@ -989,6 +1186,9 @@ void MultiplayerScreen_Main(void *objPtr)
             self->enterCodeLabel[0]->useColors                      = true;
             self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->alpha = 0x100;
             self->buttons[MULTIPLAYERSCREEN_BUTTON_PASTE]->alpha    = 0x100;
+            if (self->ipPrefixLabel) self->ipPrefixLabel->alpha = 0;
+            for (int i = 0; i < 12; ++i) self->ipDigitLabel[i]->alpha = 0;
+            for (int i = 0; i < 3; ++i) self->ipDotLabel[i]->alpha = 0;
 
             break;
         }

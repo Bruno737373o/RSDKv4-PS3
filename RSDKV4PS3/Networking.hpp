@@ -16,6 +16,7 @@ extern bool useHostServer;
 extern float lastPing;
 extern int dcError;
 extern bool waitingForPing;
+extern char publicIP[16];
 
 struct MultiplayerData {
     int type;

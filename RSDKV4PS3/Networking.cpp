@@ -40,6 +40,7 @@ int dcError         = 0;
 float lastPing      = 0;
 
 bool waitingForPing = false;
+char publicIP[16]   = "0.0.0.0";
 
 uint64_t lastTime = 0;
 
@@ -999,6 +1000,73 @@ sys_ppu_thread_t netThread;
 bool netThreadRunning = false;
 
 sys_ppu_thread_t relayThread;
+
+sys_ppu_thread_t ipThread;
+bool ipThreadRunning = false;
+
+static void fetchIPLoop(uint64_t arg)
+{
+    int sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (sockfd < 0) {
+        ipThreadRunning = false;
+        sys_ppu_thread_exit(0);
+        return;
+    }
+
+    struct hostent *server = gethostbyname("api.ipify.org");
+    if (!server) {
+        socketclose(sockfd);
+        ipThreadRunning = false;
+        sys_ppu_thread_exit(0);
+        return;
+    }
+
+    struct sockaddr_in serv_addr;
+    memset(&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    memcpy(&serv_addr.sin_addr.s_addr, server->h_addr, server->h_length);
+    serv_addr.sin_port = htons(80);
+
+    // Timeout
+    struct timeval tv;
+    tv.tv_sec  = 5;
+    tv.tv_usec = 0;
+    setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
+    setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(struct timeval));
+
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        socketclose(sockfd);
+        ipThreadRunning = false;
+        sys_ppu_thread_exit(0);
+        return;
+    }
+
+    const char *request = "GET / HTTP/1.1\r\nHost: api.ipify.org\r\nConnection: close\r\n\r\n";
+    send(sockfd, request, strlen(request), 0);
+
+    char buffer[1024];
+    int bytes = recv(sockfd, buffer, sizeof(buffer) - 1, 0);
+    if (bytes > 0) {
+        buffer[bytes] = 0;
+        char *ipStart = strstr(buffer, "\r\n\r\n");
+        if (ipStart) {
+            ipStart += 4;
+            char *ipEnd = ipStart;
+            while (*ipEnd && *ipEnd != '\r' && *ipEnd != '\n' && (ipEnd - ipStart) < 15) {
+                ipEnd++;
+            }
+            int len = ipEnd - ipStart;
+            if (len > 0) {
+                memcpy(publicIP, ipStart, len);
+                publicIP[len] = 0;
+            }
+        }
+    }
+
+    socketclose(sockfd);
+    ipThreadRunning = false;
+    sys_ppu_thread_exit(0);
+}
 #else
 std::thread loopThread;
 #endif
@@ -1013,6 +1081,11 @@ void InitNetwork()
     }
 
     if (useHostServer && !relayThreadRunning) {
+        if (!ipThreadRunning && strcmp(publicIP, "0.0.0.0") == 0) {
+            ipThreadRunning = true;
+            sys_ppu_thread_create(&ipThread, fetchIPLoop, 0, 100, 16384, SYS_PPU_THREAD_CREATE_JOINABLE, "IPThread");
+        }
+
         relayThreadRunning = true;
         PrintLog("InitNetwork() - Starting Relay Server thread...");
         int res = sys_ppu_thread_create(&relayThread, relayLoop, 0, 400, 32768, SYS_PPU_THREAD_CREATE_JOINABLE, "RelayThread");
@@ -1107,6 +1180,13 @@ void DisconnectNetwork(bool finalClose)
         relayThreadRunning = false;
         uint64_t exit_code;
         sys_ppu_thread_join(relayThread, &exit_code);
+    }
+
+    if (finalClose && ipThreadRunning) {
+        // Can't really stop it easily, but we can wait
+        uint64_t exit_code;
+        sys_ppu_thread_join(ipThread, &exit_code);
+        ipThreadRunning = false;
     }
 #else
     if (loopThread.joinable())
