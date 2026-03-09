@@ -1,14 +1,17 @@
 #if RETRO_USE_NETWORKING
 #ifndef NETWORKING_H
 #define NETWORKING_H
+#if RETRO_PLATFORM != RETRO_PS3
 #include <thread>
 #include <memory>
+#endif
 
 #define PACKET_SIZE 0x1000
 
 extern char networkHost[64];
 extern char networkGame[7];
 extern int networkPort;
+extern bool useHostServer;
 
 extern float lastPing;
 extern int dcError;
@@ -20,10 +23,10 @@ struct MultiplayerData {
 };
 
 struct ServerPacket {
-    byte header  = 0;
-    char game[7] = { 0, 0, 0, 0, 0, 0, 0 };
-    uint player  = 0;
-    uint room    = 0;
+    byte header;
+    char game[7];
+    uint player;
+    uint room;
 
     union {
         unsigned char bytes[PACKET_SIZE - 16];
@@ -61,7 +64,11 @@ enum ServerHeaders {
 
 class NetworkSession;
 
+#if RETRO_PLATFORM == RETRO_PS3
+extern NetworkSession *session;
+#else
 extern std::shared_ptr<NetworkSession> session;
+#endif
 
 void InitNetwork();
 void RunNetwork();

@@ -82,7 +82,14 @@ void MultiplayerScreen_Create(void *objPtr)
 
     RSDK_THIS(MultiplayerScreen);
 
-    self->state = MULTIPLAYERSCREEN_STATE_ENTER;
+    self->state     = MULTIPLAYERSCREEN_STATE_ENTER;
+    self->stateDraw = MULTIPLAYERSCREEN_STATEDRAW_MAIN;
+    self->scale     = 0.0f;
+    self->timer     = 0.0f;
+    self->roomCode  = 0;
+    self->rotationY = 0.0f;
+    self->flipDir   = 0;
+    vsPlayerID      = -1;
 
     self->label                  = CREATE_ENTITY(TextLabel);
     self->label->useRenderMatrix = true;
@@ -219,6 +226,9 @@ void MultiplayerScreen_DrawJoinCode(void *objPtr, int v)
         byte bytes[4];
     } u;
     u.val = self->roomCode;
+#if RETRO_IS_BIG_ENDIAN
+    SWAP_ENDIAN(u.val);
+#endif
 
     for (int i = 0; i < 8; i += 2) {
         int n         = 7 - i;
@@ -261,26 +271,54 @@ void MultiplayerScreen_Main(void *objPtr)
     if (dcError && self->state == MULTIPLAYERSCREEN_STATE_HOSTSCR)
         CREATE_ENTITY(MultiplayerHandler);
 
+    // Global rendering matrix setup
+    if (self->state == MULTIPLAYERSCREEN_STATE_ENTER) {
+        NewRenderState();
+        MatrixScaleXYZF(&self->renderMatrix, self->scale, self->scale, 1.0);
+        MatrixTranslateXYZF(&self->matrixTemp, 0.0, -8.0, 160.0);
+        MatrixMultiplyF(&self->renderMatrix, &self->matrixTemp);
+    }
+    else if (self->state == MULTIPLAYERSCREEN_STATE_FLIP) {
+        NewRenderState();
+        MatrixRotateYF(&self->renderMatrix, self->rotationY);
+        MatrixTranslateXYZF(&self->matrixTemp, 0.0, -8.0, 160.0);
+        MatrixMultiplyF(&self->renderMatrix, &self->matrixTemp);
+    }
+    else if (self->state == MULTIPLAYERSCREEN_STATE_STARTGAME || self->state == MULTIPLAYERSCREEN_STATE_EXIT) {
+        NewRenderState();
+        MatrixScaleXYZF(&self->renderMatrix, self->scale, self->scale, 1.0);
+        MatrixTranslateXYZF(&self->matrixTemp, 0.0, -8.0, 160.0);
+        MatrixMultiplyF(&self->renderMatrix, &self->matrixTemp);
+    }
+    else {
+        NewRenderState();
+        MatrixTranslateXYZF(&self->renderMatrix, 0.0, -8.0, 160.0);
+    }
+    SetRenderMatrix(&self->renderMatrix);
+
+    // Sync matrices for sub-entities
+    if (self->label) memcpy(&self->label->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    for (int i = 0; i < 3; ++i) {
+        if (self->codeLabel[i]) memcpy(&self->codeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    }
+    for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) {
+        if (self->buttons[i]) memcpy(&self->buttons[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    }
+    for (int i = 0; i < 8; ++i) {
+        if (self->enterCodeLabel[i]) memcpy(&self->enterCodeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    }
+    if (self->enterCodeSlider[1]) memcpy(&self->enterCodeSlider[1]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
+    if (self->enterCodeSlider[0]) {
+        MatrixRotateZF(&self->enterCodeSlider[0]->renderMatrix, DegreesToRad(180));
+        MatrixMultiplyF(&self->enterCodeSlider[0]->renderMatrix, &self->renderMatrix);
+    }
+
     switch (self->state) {
         case MULTIPLAYERSCREEN_STATE_ENTER: {
             if (self->arrowAlpha < 0x100)
                 self->arrowAlpha += 8;
 
             self->scale = fminf(self->scale + ((1.05 - self->scale) / ((60.0 * Engine.deltaTime) * 8.0)), 1.0f);
-
-            NewRenderState();
-            MatrixScaleXYZF(&self->renderMatrix, self->scale, self->scale, 1.0);
-            MatrixTranslateXYZF(&self->matrixTemp, 0.0, -8.0, 160.0);
-            MatrixMultiplyF(&self->renderMatrix, &self->matrixTemp);
-            SetRenderMatrix(&self->renderMatrix);
-
-            memcpy(&self->label->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < 3; ++i) memcpy(&self->codeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) memcpy(&self->buttons[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < 8; ++i) memcpy(&self->enterCodeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            memcpy(&self->enterCodeSlider[1]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            MatrixRotateZF(&self->enterCodeSlider[0]->renderMatrix, DegreesToRad(180));
-            MatrixMultiplyF(&self->enterCodeSlider[0]->renderMatrix, &self->renderMatrix);
 
             self->timer += Engine.deltaTime;
             if (self->timer > 0.5) {
@@ -292,9 +330,12 @@ void MultiplayerScreen_Main(void *objPtr)
         case MULTIPLAYERSCREEN_STATE_MAIN: {
             CheckKeyDown(&keyDown);
             CheckKeyPress(&keyPress);
-            SetRenderMatrix(&self->renderMatrix);
 
             if (usePhysicalControls) {
+                if (keyPress.left || keyPress.right) {
+                    PlaySfxByName("Menu Move", false);
+                    self->selectedButton = (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_HOST) ? MULTIPLAYERSCREEN_BUTTON_JOIN : MULTIPLAYERSCREEN_BUTTON_HOST;
+                }
                 if (touches > 0) {
                     usePhysicalControls = false;
                 }
@@ -388,21 +429,24 @@ void MultiplayerScreen_Main(void *objPtr)
         }
         case MULTIPLAYERSCREEN_STATE_ACTION: { // action
             CheckKeyDown(&keyDown);
-            SetRenderMatrix(&self->renderMatrix);
 
             if (self->buttons[self->selectedButton]->state == PUSHBUTTON_STATE_UNSELECTED) {
-                self->state = MULTIPLAYERSCREEN_STATE_MAIN;
-                switch (self->selectedButton) {
+                int selected = self->selectedButton;
+                self->state  = MULTIPLAYERSCREEN_STATE_MAIN;
+                PrintLog("MultiplayerScreen - Action confirm: %d", selected);
+                switch (selected) {
                     default: break;
                     case MULTIPLAYERSCREEN_BUTTON_HOST:
                         self->state         = MULTIPLAYERSCREEN_STATE_FLIP;
                         self->nextState     = MULTIPLAYERSCREEN_STATE_HOSTSCR;
                         self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_HOST;
+                        self->flipDir       = 1;
                         break;
                     case MULTIPLAYERSCREEN_BUTTON_JOIN:
                         self->state         = MULTIPLAYERSCREEN_STATE_FLIP;
                         self->nextState     = MULTIPLAYERSCREEN_STATE_JOINSCR;
                         self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_JOIN;
+                        self->flipDir       = 1;
                         break;
                     case MULTIPLAYERSCREEN_BUTTON_JOINROOM: {
                         self->state                   = MULTIPLAYERSCREEN_STATE_STARTGAME;
@@ -421,25 +465,6 @@ void MultiplayerScreen_Main(void *objPtr)
                 self->dialog->state = DIALOGPANEL_STATE_IDLE;
             if (self->arrowAlpha > 0)
                 self->arrowAlpha -= 8;
-
-            /*if (self->timer < 0.2)
-                self->scale = fmaxf(self->scale + ((1.5f - self->scale) / ((Engine.deltaTime * 60.0) * 8.0)), 0.0);
-            else
-                self->scale = fmaxf(self->scale + ((-1.0f - self->scale) / ((Engine.deltaTime * 60.0) * 8.0)), 0.0);
-            //*/
-            NewRenderState();
-            MatrixScaleXYZF(&self->renderMatrix, self->scale, self->scale, 1.0);
-            MatrixTranslateXYZF(&self->matrixTemp, 0.0, -8.0, 160.0);
-            MatrixMultiplyF(&self->renderMatrix, &self->matrixTemp);
-            SetRenderMatrix(&self->renderMatrix);
-
-            memcpy(&self->label->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < 3; ++i) memcpy(&self->codeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) memcpy(&self->buttons[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < 8; ++i) memcpy(&self->enterCodeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            memcpy(&self->enterCodeSlider[1]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            MatrixRotateZF(&self->enterCodeSlider[0]->renderMatrix, DegreesToRad(180));
-            MatrixMultiplyF(&self->enterCodeSlider[0]->renderMatrix, &self->renderMatrix);
 
             self->timer += Engine.deltaTime;
             if (self->timer > 0.5) {
@@ -462,16 +487,18 @@ void MultiplayerScreen_Main(void *objPtr)
                         Engine.gameMode = ENGINE_RESETGAME;
                 }
                 else {
-                    if (self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->state == PUSHBUTTON_STATE_UNSELECTED) { /// hhhhhhack
+                    if (vsPlayerID == 1) {
                         SetRoomCode(self->roomCode);
                         ServerPacket send;
+                        memset(&send, 0, sizeof(ServerPacket));
                         send.header = CL_JOIN;
-                        vsPlayerID  = 1; // we are.... Little Guy
-
+                        send.room   = self->roomCode;
+                        PrintLog("MultiplayerScreen - Joining room 0x%08X", send.room);
                         SendServerPacket(send, true);
                     }
                 }
                 MultiplayerScreen_Destroy(self);
+                NewRenderState();
                 MatrixScaleXYZF(&self->renderMatrix, Engine.windowScale, Engine.windowScale, 1.0);
                 MatrixTranslateXYZF(&self->matrixTemp, 0.0, 0.0, 160.0);
                 MatrixMultiplyF(&self->renderMatrix, &self->matrixTemp);
@@ -485,51 +512,40 @@ void MultiplayerScreen_Main(void *objPtr)
         case MULTIPLAYERSCREEN_STATE_FLIP: { // panel flip
             if (self->flipDir) {
                 self->rotationY += (10.0 * Engine.deltaTime);
-                if (self->rotationY > (M_PI_2)) {
-                    self->state     = self->nextState;
-                    self->rotationY = 0.0;
-                }
-                else if (self->rotationY > M_PI) {
+                if (self->rotationY > M_PI_H && self->nextStateDraw != MULTIPLAYERSCREEN_STATEDRAW_NONE) {
                     self->stateDraw     = self->nextStateDraw;
                     self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_NONE;
+                }
+
+                if (self->rotationY > M_PI) {
+                    self->state     = self->nextState;
+                    self->timer     = 0.0f;
+                    self->rotationY = 0.0;
                 }
             }
             else {
                 self->rotationY -= (10.0 * Engine.deltaTime);
-                if (self->rotationY < -(M_PI_2)) {
-                    self->state     = self->nextState;
-                    self->rotationY = 0.0;
-                }
-                else if (self->rotationY < -M_PI) {
+                if (self->rotationY < -M_PI_H && self->nextStateDraw != MULTIPLAYERSCREEN_STATEDRAW_NONE) {
                     self->stateDraw     = self->nextStateDraw;
                     self->nextStateDraw = MULTIPLAYERSCREEN_STATEDRAW_NONE;
                 }
+
+                if (self->rotationY < -M_PI) {
+                    self->state     = self->nextState;
+                    self->timer     = 0.0f;
+                    self->rotationY = 0.0;
+                }
             }
-            NewRenderState();
-            MatrixRotateYF(&self->renderMatrix, self->rotationY);
-            MatrixTranslateXYZF(&self->matrixTemp, 0.0, -8.0, 160.0);
-            MatrixMultiplyF(&self->renderMatrix, &self->matrixTemp);
-            SetRenderMatrix(&self->renderMatrix);
-
-            for (int i = 0; i < 3; ++i) memcpy(&self->codeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) memcpy(&self->buttons[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            for (int i = 0; i < 8; ++i) memcpy(&self->enterCodeLabel[i]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            memcpy(&self->enterCodeSlider[1]->renderMatrix, &self->renderMatrix, sizeof(MatrixF));
-            MatrixRotateZF(&self->enterCodeSlider[0]->renderMatrix, DegreesToRad(180));
-            MatrixMultiplyF(&self->enterCodeSlider[0]->renderMatrix, &self->renderMatrix);
-
             break;
         }
         case MULTIPLAYERSCREEN_STATE_HOSTSCR: {
             CheckKeyDown(&keyDown);
             CheckKeyPress(&keyPress);
-            SetRenderMatrix(&self->renderMatrix);
 
             if (!self->roomCode) {
                 int code = GetRoomCode();
                 if (code) {
                     char buffer[0x30];
-                    int code = GetRoomCode();
                     sprintf(buffer, "%08X", code);
                     SetStringToFont8(self->codeLabel[1]->text, buffer, self->codeLabel[1]->fontID);
                     self->codeLabel[1]->alignPtr(self->codeLabel[1], ALIGN_CENTER);
@@ -537,11 +553,11 @@ void MultiplayerScreen_Main(void *objPtr)
                 }
             }
             else {
-                // listen.
-                if (Engine.gameMode != ENGINE_WAIT2PVS) {
-                    self->buttons[MULTIPLAYERSCREEN_BUTTON_JOINROOM]->state = PUSHBUTTON_STATE_UNSELECTED; // HAck
-                    self->selectedButton                                    = MULTIPLAYERSCREEN_BUTTON_JOINROOM;
-                    self->state                                             = MULTIPLAYERSCREEN_STATE_ACTION;
+                // listen for room creation success (SV_CODES or SV_NEW_PLAYER)
+                if (vsPlaying && vsPlayerID == 0) {
+                    PrintLog("MultiplayerScreen - Host session started, transitioning.");
+                    self->selectedButton = MULTIPLAYERSCREEN_BUTTON_JOINROOM;
+                    self->state          = MULTIPLAYERSCREEN_STATE_ACTION;
                 }
             }
 
@@ -552,10 +568,12 @@ void MultiplayerScreen_Main(void *objPtr)
                 else {
                     if (keyPress.A || keyPress.start) {
                         PlaySfxByName("Menu Select", false);
+#if RETRO_PLATFORM != RETRO_PS3
                         char buffer[0x30];
                         int code = GetRoomCode();
                         sprintf(buffer, "%08X", code);
                         SDL_SetClipboardText(buffer);
+#endif
                     }
                     if (keyPress.B) {
                         self->dialog = CREATE_ENTITY(DialogPanel);
@@ -583,10 +601,12 @@ void MultiplayerScreen_Main(void *objPtr)
                         if (keyPress.A || keyPress.start)
                             usePhysicalControls = true;
                         PlaySfxByName("Menu Select", false);
+#if RETRO_PLATFORM != RETRO_PS3
                         char buffer[0x30];
                         int code = GetRoomCode();
                         sprintf(buffer, "%08X", code);
                         SDL_SetClipboardText(buffer);
+#endif
                     }
                     if (keyPress.B || self->backPressed) {
                         self->backPressed = false;
@@ -604,7 +624,6 @@ void MultiplayerScreen_Main(void *objPtr)
         case MULTIPLAYERSCREEN_STATE_JOINSCR: {
             CheckKeyDown(&keyDown);
             CheckKeyPress(&keyPress);
-            SetRenderMatrix(&self->renderMatrix);
 
             if (usePhysicalControls) {
                 if (touches > 0) {
@@ -631,6 +650,9 @@ void MultiplayerScreen_Main(void *objPtr)
                             byte bytes[4];
                         } u;
                         u.val         = self->roomCode;
+#if RETRO_IS_BIG_ENDIAN
+                        SWAP_ENDIAN(u.val);
+#endif
                         int n         = 7 - (self->selectedButton - 5);
                         int nybbles[] = { u.bytes[n >> 1] & 0xF, ((u.bytes[n >> 1] & 0xF0) >> 4) & 0xF };
 
@@ -644,9 +666,12 @@ void MultiplayerScreen_Main(void *objPtr)
                         }
 
                         u.bytes[n >> 1] = (nybbles[1] << 4) | (nybbles[0] & 0xF);
+#if RETRO_IS_BIG_ENDIAN
+                        SWAP_ENDIAN(u.val);
+#endif
                         self->roomCode  = u.val;
 
-                        MultiplayerScreen_DrawJoinCode(self, n);
+                        MultiplayerScreen_DrawJoinCode(self, 7 - n);
                     }
 
                     for (int i = 0; i < 8; ++i) self->enterCodeLabel[i]->useColors = false;
@@ -677,6 +702,7 @@ void MultiplayerScreen_Main(void *objPtr)
                         }
                         else if (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_PASTE) {
                             self->buttons[MULTIPLAYERSCREEN_BUTTON_PASTE]->state = PUSHBUTTON_STATE_FLASHING;
+#if RETRO_PLATFORM != RETRO_PS3
                             char buf[0x30];
                             char *txt = SDL_GetClipboardText(); // easier bc we must SDL free after
                             if (StrLength(txt) && StrLength(txt) < 0x30 - 2) {
@@ -700,6 +726,9 @@ void MultiplayerScreen_Main(void *objPtr)
                             else
                                 PlaySfxByName("Hurt", false);
                             SDL_free(txt);
+#else
+                            PlaySfxByName("Hurt", false);
+#endif
                         }
                     }
                     else if (keyPress.B) {
@@ -766,6 +795,9 @@ void MultiplayerScreen_Main(void *objPtr)
                             byte bytes[4];
                         } u;
                         u.val         = self->roomCode;
+#if RETRO_IS_BIG_ENDIAN
+                        SWAP_ENDIAN(u.val);
+#endif
                         int n         = 7 - id;
                         int nybbles[] = { u.bytes[n >> 1] & 0xF, ((u.bytes[n >> 1] & 0xF0) >> 4) & 0xF };
 
@@ -779,8 +811,15 @@ void MultiplayerScreen_Main(void *objPtr)
                         }
 
                         u.bytes[n >> 1] = (nybbles[1] << 4) | (nybbles[0] & 0xF);
+#if RETRO_IS_BIG_ENDIAN
+                        SWAP_ENDIAN(u.val);
+#endif
                         self->roomCode  = u.val;
 
+                        u.val = self->roomCode;
+#if RETRO_IS_BIG_ENDIAN
+                        SWAP_ENDIAN(u.val);
+#endif
                         for (int i = 0; i < 8; i += 2) {
                             int n         = 7 - i;
                             int nybbles[] = { u.bytes[n >> 1] & 0xF, ((u.bytes[n >> 1] & 0xF0) >> 4) & 0xF };
@@ -814,6 +853,7 @@ void MultiplayerScreen_Main(void *objPtr)
                     }
                     else if (self->buttons[MULTIPLAYERSCREEN_BUTTON_PASTE]->state == PUSHBUTTON_STATE_SELECTED) {
                         self->buttons[MULTIPLAYERSCREEN_BUTTON_PASTE]->state = PUSHBUTTON_STATE_FLASHING;
+#if RETRO_PLATFORM != RETRO_PS3
                         char buf[0x30];
                         char *txt = SDL_GetClipboardText(); // easier bc we must SDL free after
                         if (StrLength(txt) && StrLength(txt) < 0x30 - 2) {
@@ -837,6 +877,9 @@ void MultiplayerScreen_Main(void *objPtr)
                         else
                             PlaySfxByName("Hurt", false);
                         SDL_free(txt);
+#else
+                        PlaySfxByName("Hurt", false);
+#endif
                     }
 
                     if (keyPress.B || self->backPressed) {
@@ -861,7 +904,6 @@ void MultiplayerScreen_Main(void *objPtr)
             break;
         }
         case MULTIPLAYERSCREEN_STATE_DIALOGWAIT: {
-            SetRenderMatrix(&self->renderMatrix);
             if (self->dialog->selection == DLG_NO || self->dialog->selection == DLG_OK) {
                 self->state = MULTIPLAYERSCREEN_STATE_HOSTSCR;
             }
@@ -883,6 +925,7 @@ void MultiplayerScreen_Main(void *objPtr)
     switch (self->stateDraw) {
         default: break;
         case MULTIPLAYERSCREEN_STATEDRAW_MAIN:
+            PrintLog("MultiplayerScreen - DrawState: MAIN");
             for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) self->buttons[i]->alpha = 0;
             self->buttons[MULTIPLAYERSCREEN_BUTTON_HOST]->alpha = 0x100;
             self->buttons[MULTIPLAYERSCREEN_BUTTON_JOIN]->alpha = 0x100;
@@ -892,8 +935,10 @@ void MultiplayerScreen_Main(void *objPtr)
             for (int i = 0; i < 2; ++i) self->enterCodeSlider[i]->alpha = 0;
 
             self->selectedButton = MULTIPLAYERSCREEN_BUTTON_HOST;
+            vsPlayerID           = -1;
             break;
         case MULTIPLAYERSCREEN_STATEDRAW_HOST: {
+            PrintLog("MultiplayerScreen - DrawState: HOST, vsPlayerID=%d", vsPlayerID);
             for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) self->buttons[i]->alpha = 0;
             for (int i = 0; i < 3; ++i) self->codeLabel[i]->alpha = 0x100;
             for (int i = 0; i < 8; ++i) self->enterCodeLabel[i]->alpha = 0;
@@ -907,6 +952,7 @@ void MultiplayerScreen_Main(void *objPtr)
             self->codeLabel[1]->alignPtr(self->codeLabel[1], ALIGN_CENTER);
 
             ServerPacket send;
+            memset(&send, 0, sizeof(ServerPacket));
             send.header = CL_REQUEST_CODE;
             // send over a preferred roomcode style
             if (!vsGameLength)
@@ -921,6 +967,7 @@ void MultiplayerScreen_Main(void *objPtr)
             break;
         }
         case MULTIPLAYERSCREEN_STATEDRAW_JOIN: {
+            PrintLog("MultiplayerScreen - DrawState: JOIN");
             for (int i = 0; i < MULTIPLAYERSCREEN_BUTTON_COUNT; ++i) self->buttons[i]->alpha = 0;
             self->selectedButton = MULTIPLAYERSCREEN_BUTTON_COUNT;
             self->touchedUpID    = -1;
@@ -928,7 +975,8 @@ void MultiplayerScreen_Main(void *objPtr)
 
             for (int i = 0; i < 3; ++i) self->codeLabel[i]->alpha = 0;
 
-            self->roomCode = 0;
+            self->roomCode  = 0;
+            vsPlayerID      = 1; // we are... Little Guy
             for (int i = 0; i < 8; ++i) {
                 self->enterCodeLabel[i]->alpha     = 0x100;
                 self->enterCodeLabel[i]->useColors = false;

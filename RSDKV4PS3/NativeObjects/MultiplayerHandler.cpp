@@ -63,8 +63,8 @@ void MultiplayerHandler_Main(void *objPtr)
                 vsPlaying   = false;
             }
             else if (self->timer >= 5.0f && waitingForPing) {
-                self->pingLabel->g = 0xCF * (fmod(self->timer, .5) >= .25) + 0x30;
-                self->pingLabel->b = 0xCF * (fmod(self->timer, .5) >= .25) + 0x30;
+                self->pingLabel->g = 0xCF * (fmodf(self->timer, 0.5f) >= 0.25f) + 0x30;
+                self->pingLabel->b = 0xCF * (fmodf(self->timer, 0.5f) >= 0.25f) + 0x30;
                 self->pingLabel->alignPtr(self->pingLabel, ALIGN_CENTER);
                 self->pingLabel->x += 28.0f;
                 sprintf(buf, " !! %.2fs !!", 10 - self->timer);

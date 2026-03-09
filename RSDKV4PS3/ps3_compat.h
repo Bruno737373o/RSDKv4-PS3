@@ -26,6 +26,9 @@
 #include <cell/resc.h>
 #include <cell/gcm.h>
 #include <sysutil/sysutil_common.h>
+#include <sys/socket.h>
+#include <netex/net.h>
+#include <netex/errno.h>
 
 #ifndef BYTE_DEFINED
 #define BYTE_DEFINED
@@ -42,6 +45,10 @@ typedef unsigned long long Uint64;
 
 #ifdef __cplusplus
 extern "C" {
+#endif
+
+#if defined(__PS3__) || defined(PS3) || defined(__CELLOS_LV2__)
+void InitPS3Network();
 #endif
 
 #if defined(__PS3__) || defined(PS3) || defined(__CELLOS_LV2__)

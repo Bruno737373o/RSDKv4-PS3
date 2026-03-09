@@ -15,11 +15,7 @@
 #endif
 
 #ifndef RETRO_USE_NETWORKING
-#if RETRO_PLATFORM == RETRO_PS3
-#define RETRO_USE_NETWORKING (0)
-#else
 #define RETRO_USE_NETWORKING (!RETRO_USE_ORIGINAL_CODE && 1)
-#endif
 #endif
 
 // Forces all DLC flags to be disabled, this should be enabled in any public releases

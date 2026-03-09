@@ -74,7 +74,7 @@ distribution.
 #   else
 #       define TINYXML2_LIB
 #   endif
-#elif __GNUC__ >= 4
+#elif __GNUC__ >= 4 && !defined(__SNC__) && !defined(__PS3__) && !defined(__cell__) && !defined(__PPU__) && !defined(__SPU__)
 #   define TINYXML2_LIB __attribute__((visibility("default")))
 #else
 #   define TINYXML2_LIB

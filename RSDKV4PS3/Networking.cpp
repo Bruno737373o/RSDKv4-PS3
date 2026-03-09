@@ -4,16 +4,38 @@
 #include <cstdlib>
 #include <deque>
 #include <iostream>
+#if RETRO_PLATFORM != RETRO_PS3
+#include <functional>
 #include <thread>
 #include <chrono>
+#endif
 #if RETRO_PLATFORM == RETRO_ANDROID
 #define ASIO_NO_TYPEID
 #endif
+#if RETRO_PLATFORM == RETRO_PS3
+#include <netex/net.h>
+#include <netex/errno.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <errno.h>
+#include <sys/socket.h>
+#include <sys/select.h>
+#include <sys/time.h>
+#include <sys/types.h>
+
+#ifndef FIONBIO
+#define FIONBIO 0x8004667e
+#endif
+
+#else
 #include <asio.hpp>
+#endif
 
 char networkHost[64];
 char networkGame[7] = "SONIC2";
 int networkPort     = 50;
+bool useHostServer  = false;
 int dcError         = 0;
 float lastPing      = 0;
 
@@ -21,10 +43,450 @@ bool waitingForPing = false;
 
 uint64_t lastTime = 0;
 
+#if RETRO_PLATFORM != RETRO_PS3
 using asio::ip::udp;
+#endif
 
 typedef std::deque<ServerPacket> DataQueue;
 
+#if RETRO_IS_BIG_ENDIAN
+void SwapEntityEndian(Entity *e)
+{
+    // Use local variables to handle alignment safely on PS3
+    int temp;
+#define SWAP_ENTITY_FIELD(field) \
+    memcpy(&temp, &e->field, sizeof(int)); \
+    SWAP_ENDIAN(temp); \
+    memcpy(&e->field, &temp, sizeof(int));
+
+    SWAP_ENTITY_FIELD(xpos);
+    SWAP_ENTITY_FIELD(ypos);
+    SWAP_ENTITY_FIELD(xvel);
+    SWAP_ENTITY_FIELD(yvel);
+    SWAP_ENTITY_FIELD(speed);
+    for (int i = 0; i < 48; ++i) {
+        memcpy(&temp, &e->values[i], sizeof(int));
+        SWAP_ENDIAN(temp);
+        memcpy(&e->values[i], &temp, sizeof(int));
+    }
+    SWAP_ENTITY_FIELD(state);
+    SWAP_ENTITY_FIELD(angle);
+    SWAP_ENTITY_FIELD(scale);
+    SWAP_ENTITY_FIELD(rotation);
+    SWAP_ENTITY_FIELD(alpha);
+    SWAP_ENTITY_FIELD(animationTimer);
+    SWAP_ENTITY_FIELD(animationSpeed);
+    SWAP_ENTITY_FIELD(lookPosX);
+    SWAP_ENTITY_FIELD(lookPosY);
+    
+    ushort tempShort;
+    memcpy(&tempShort, &e->groupID, sizeof(ushort));
+    SwapEndian(&tempShort, sizeof(ushort));
+    memcpy(&e->groupID, &tempShort, sizeof(ushort));
+#undef SWAP_ENTITY_FIELD
+}
+
+void SwapPacketEndian(ServerPacket *p, bool receiving)
+{
+    uint l_player, l_room;
+    memcpy(&l_player, &p->player, sizeof(uint));
+    memcpy(&l_room, &p->room, sizeof(uint));
+    SWAP_ENDIAN(l_player);
+    SWAP_ENDIAN(l_room);
+    memcpy(&p->player, &l_player, sizeof(uint));
+    memcpy(&p->room, &l_room, sizeof(uint));
+
+    int type;
+    memcpy(&type, &p->data.multiData.type, sizeof(int));
+    if (receiving) {
+        // LE (from packet) -> BE (Host)
+        SwapEndian(&type, sizeof(int));
+        // type is now Host-endian
+        int hostType = type;
+        // Decided to keep the packet Host-endian internally after reception for easier handling
+        memcpy(&p->data.multiData.type, &type, sizeof(int));
+        
+        if (hostType == 1) {
+            SwapEntityEndian((Entity *)p->data.multiData.data);
+        }
+        else {
+            int *data = (int *)p->data.multiData.data;
+            int count = (PACKET_SIZE - 16 - sizeof(int)) / sizeof(int);
+            for (int i = 0; i < count; ++i) {
+                int val;
+                memcpy(&val, &data[i], sizeof(int));
+                SWAP_ENDIAN(val);
+                memcpy(&data[i], &val, sizeof(int));
+            }
+        }
+    }
+    else {
+        // BE (Host) -> LE (to packet)
+        int hostType = type;
+        if (hostType == 1) {
+            SwapEntityEndian((Entity *)p->data.multiData.data);
+        }
+        else {
+            int *data = (int *)p->data.multiData.data;
+            int count = (PACKET_SIZE - 16 - sizeof(int)) / sizeof(int);
+            for (int i = 0; i < count; ++i) {
+                int val;
+                memcpy(&val, &data[i], sizeof(int));
+                SWAP_ENDIAN(val);
+                memcpy(&data[i], &val, sizeof(int));
+            }
+        }
+        // Swap the type last so hostType check works
+        SwapEndian(&type, sizeof(int));
+        memcpy(&p->data.multiData.type, &type, sizeof(int));
+    }
+}
+#endif
+
+#if RETRO_PLATFORM == RETRO_PS3
+class NetworkSession
+{
+public:
+    bool running;
+    int sessionSocket;
+    struct sockaddr_in addr;
+
+    uint code;
+    uint partner;
+    uint room;
+
+    bool awaitingReceive;
+    bool verifyReceived;
+
+    bool retried;
+    uint retries;
+    uint64_t timer;
+
+    ServerPacket repeat;
+    ServerPacket read_msg_;
+    DataQueue write_msgs_;
+
+    NetworkSession(const char *host, int port)
+    {
+        running         = false;
+        code            = 0;
+        partner         = 0;
+        room            = 0;
+        awaitingReceive = false;
+        verifyReceived  = false;
+        retried         = true;
+        retries         = 0;
+        timer           = 0;
+
+        sessionSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+        if (sessionSocket < 0) {
+            PrintLog("NetworkSession - Failed to create socket: %d", sessionSocket);
+            return;
+        }
+
+        memset(&addr, 0, sizeof(addr));
+#if RETRO_PLATFORM == RETRO_PS3
+        addr.sin_len    = sizeof(addr);
+#endif
+        addr.sin_family = AF_INET;
+        addr.sin_port   = htons(port);
+        
+        struct hostent *he = gethostbyname(host);
+        if (he) {
+            PrintLog("NetworkSession - Resolved %s to %s", host, inet_ntoa(*(struct in_addr *)he->h_addr));
+            memcpy(&addr.sin_addr, he->h_addr, he->h_length);
+        } else {
+            addr.sin_addr.s_addr = inet_addr(host);
+            PrintLog("NetworkSession - Using IP %s", host);
+        }
+
+        int opt = 1;
+        setsockopt(sessionSocket, SOL_SOCKET, SO_REUSEADDR, (char*)&opt, sizeof(opt));
+        
+        // Non-blocking
+        int on = 1;
+        setsockopt(sessionSocket, SOL_SOCKET, SO_NBIO, (const char*)&on, sizeof(on));
+    }
+
+    ~NetworkSession()
+    {
+        close();
+    }
+
+    void write(const ServerPacket &msg, bool repeat = false)
+    {
+        if (!running) return;
+
+        // Ignore redundant request codes if we already have a code/room
+        if (code && msg.header == CL_REQUEST_CODE)
+            return;
+
+        // Ignore game data packets if we are not connected yet
+        if (!code && msg.header != CL_REQUEST_CODE && msg.header != CL_JOIN)
+            return;
+
+        ServerPacket sent = msg;
+        sent.player = code;
+        
+        if (sent.header == CL_REQUEST_CODE) {
+            // Ensure request code always has the magic room ID
+            sent.room = 0x1F2F3F4F;
+        }
+        else if (sent.header == CL_JOIN) {
+            // Keep the room ID provided for joining
+        }
+        else {
+            sent.room = room;
+        }
+        
+        uint l_room, l_player;
+        memcpy(&l_room, &sent.room, sizeof(uint));
+        memcpy(&l_player, &sent.player, sizeof(uint));
+#if RETRO_IS_BIG_ENDIAN
+        SWAP_ENDIAN(l_room);
+#endif
+        PrintLog("NetworkSession::write() - Header=0x%02X, room=0x%08X, player=%u", sent.header, l_room, l_player);
+        
+        write_msgs_.push_back(sent);
+        if (repeat) {
+            this->repeat = sent;
+        }
+    }
+
+    void start()
+    {
+        PrintLog("NetworkSession::start()");
+        running       = true;
+        code          = 0;
+        room          = 0;
+        partner       = 0;
+        retries       = 0;
+        timer         = sys_time_get_system_time();
+        lastTime      = timer;
+        
+        repeat.header = 0x80;
+        retried       = true;
+    }
+
+    void close()
+    {
+        if (running)
+            running = false;
+        if (sessionSocket >= 0) {
+#if RETRO_PLATFORM == RETRO_PS3
+            shutdown(sessionSocket, SHUT_RDWR);
+            socketclose(sessionSocket);
+#else
+            close(sessionSocket);
+#endif
+            sessionSocket = -1;
+        }
+    }
+
+    void run()
+    {
+        if (sessionSocket < 0) return;
+
+        while (!write_msgs_.empty()) {
+            ServerPacket sentMsg = write_msgs_.front();
+            write_msgs_.pop_front();
+            
+            ServerPacket *send = &sentMsg;
+            StrCopy(send->game, networkGame);
+
+            uint l_room, l_player;
+            memcpy(&l_room, &send->room, sizeof(uint));
+            memcpy(&l_player, &send->player, sizeof(uint));
+#if RETRO_IS_BIG_ENDIAN
+        SWAP_ENDIAN(l_room);
+#endif
+            PrintLog("NetworkSession::run() - Sending packet: header=0x%02X, room=0x%08X, player=%u", send->header, l_room, l_player);
+            
+            ServerPacket packet = *send;
+            SwapPacketEndian(&packet, false);
+            int res = sendto(sessionSocket, (const char*)&packet, sizeof(ServerPacket), 0, (struct sockaddr *)&addr, sizeof(addr));
+            if (res < 0) {
+                PrintLog("NetworkSession::run() - sendto failed: %d, errno: %d", res, errno);
+            }
+            
+            if (send->header == 0xFF) {
+                PrintLog("NetworkSession::run() - CL_LEAVE sent, stopping session");
+                running = false;
+            }
+        }
+
+        do_read();
+
+        uint64_t now = sys_time_get_system_time();
+        if (repeat.header != 0x80 && retried) {
+            if (now >= timer + 1000000) { // 1 second
+                handle_timer();
+                timer = now;
+            }
+        }
+        else if (repeat.header == 0x80) {
+            retries = 0;
+            timer = now;
+        }
+
+        if (retries > 10) {
+            switch (repeat.header) {
+                case 0x01: {
+                    dcError          = 4;
+                    vsPlaying        = false;
+                    running = false;
+                    break;
+                }
+                case 0x00: {
+                    if (!room) {
+                        dcError          = 4;
+                        vsPlaying        = false;
+                        running = false;
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    void leave()
+    {
+        ServerPacket send;
+        memset(&send, 0, sizeof(ServerPacket));
+        send.header = CL_LEAVE;
+        vsPlaying   = false;
+        write(send);
+    }
+
+private:
+    void do_read()
+    {
+        if (sessionSocket < 0) return;
+
+        struct sockaddr_in from;
+        socklen_t fromlen = sizeof(from);
+        int res = recvfrom(sessionSocket, (char*)&read_msg_, sizeof(ServerPacket), 0, (struct sockaddr *)&from, &fromlen);
+        if (res > 0) {
+            handle_read(res);
+        }
+    }
+
+    void handle_timer()
+    {
+        if (sessionSocket < 0) return;
+
+        retried     = true;
+        if (repeat.header != CL_REQUEST_CODE && repeat.header != CL_JOIN)
+            repeat.room = room;
+            
+        StrCopy(repeat.game, networkGame);
+
+        uint l_header = repeat.header;
+        PrintLog("NetworkSession::handle_timer() - Retrying packet: header=0x%02X, retries=%u", l_header, retries);
+        
+        ServerPacket packet = repeat;
+        SwapPacketEndian(&packet, false);
+        int res = sendto(sessionSocket, (const char*)&packet, sizeof(ServerPacket), 0, (struct sockaddr *)&addr, sizeof(addr));
+        if (res < 0) {
+            PrintLog("NetworkSession::handle_timer() - sendto failed: %d, errno: %d", res, errno);
+        }
+        
+        retries++;
+    }
+
+    void handle_read(size_t bytes)
+    {
+        SwapPacketEndian(&read_msg_, true);
+
+        uint64_t now   = sys_time_get_system_time();
+        lastPing       = (float)((now - lastTime) / 1000.0);
+        lastTime       = now;
+        
+        uint l_room, l_player;
+        memcpy(&l_room, &read_msg_.room, sizeof(uint));
+        memcpy(&l_player, &read_msg_.player, sizeof(uint));
+#if RETRO_IS_BIG_ENDIAN
+        SWAP_ENDIAN(l_room);
+#endif
+#if RETRO_IS_BIG_ENDIAN
+        SWAP_ENDIAN(l_room);
+#endif
+        PrintLog("NetworkSession::handle_read() - Received packet: header=0x%02X, room=0x%08X, player=%u, ping=%.1fms", read_msg_.header, l_room, l_player, lastPing);
+        waitingForPing = false;
+        if (!code) {
+            if (read_msg_.header == SV_CODES && read_msg_.player) {
+                code = read_msg_.player;
+                room = read_msg_.room;
+                PrintLog("NetworkSession::handle_read() - Assigned player code: %u, room: 0x%08X", code, room);
+                repeat.header = 0x80;
+            }
+            else {
+                return;
+            }
+        }
+
+        switch (read_msg_.header) {
+            case SV_CODES: {
+                if (vsPlaying)
+                    return;
+                room = read_msg_.room;
+                PrintLog("NetworkSession::handle_read() - SV_CODES: room=0x%08X, type=%d", room, read_msg_.data.multiData.type);
+                if (read_msg_.data.multiData.type > 2) {
+                    PrintLog("NetworkSession::handle_read() - Room full");
+                    dcError = 3;
+                    leave();
+                    return;
+                }
+
+                if (read_msg_.data.multiData.type - 1) {
+                    partner = *read_msg_.data.multiData.data;
+                    PrintLog("NetworkSession::handle_read() - Match joined, partner=%u", partner);
+                    repeat.header = 0x80;
+                    Receive2PVSMatchCode(room);
+                    return;
+                }
+                break;
+            }
+            case SV_NEW_PLAYER: {
+                if (partner)
+                    return;
+                repeat.header = 0x80;
+                vsPlayerID    = 0;
+                partner       = read_msg_.player;
+                PrintLog("NetworkSession::handle_read() - SV_NEW_PLAYER: partner=%u", partner);
+                Receive2PVSMatchCode(room);
+                return;
+            }
+            case SV_DATA_VERIFIED:
+            case SV_DATA: {
+                Receive2PVSData(&read_msg_.data.multiData);
+                return;
+            }
+            case SV_RECEIVED: {
+                if (repeat.header == CL_DATA_VERIFIED)
+                    repeat.header = CL_QUERY_VERIFICATION;
+                return;
+            }
+            case SV_VERIFY_CLEAR: {
+                repeat.header = 0x80;
+                return;
+            }
+            case SV_NO_ROOM: {
+                leave();
+                dcError = 5;
+                return;
+            }
+            case SV_LEAVE: {
+                if (read_msg_.player != partner)
+                    return;
+                leave();
+                dcError = 1;
+                return;
+            }
+        }
+    }
+};
+#else
 class NetworkSession
 {
 public:
@@ -39,9 +501,38 @@ public:
 
     void write(const ServerPacket &msg, bool repeat = false)
     {
+        if (!running) return;
+
+        // Ignore redundant request codes if we already have a code/room
+        if (code && msg.header == CL_REQUEST_CODE)
+            return;
+
+        // Ignore game data packets if we are not connected yet
+        if (!code && msg.header != CL_REQUEST_CODE && msg.header != CL_JOIN)
+            return;
+
         ServerPacket sent(msg);
         sent.player = code;
-        sent.room   = room;
+        
+        if (sent.header == CL_REQUEST_CODE) {
+            // Ensure request code always has the magic room ID
+            sent.room = 0x1F2F3F4F;
+        }
+        else if (sent.header == CL_JOIN) {
+            // Keep the room ID provided for joining
+        }
+        else {
+            sent.room = room;
+        }
+
+        uint l_room, l_player;
+        memcpy(&l_room, &sent.room, sizeof(uint));
+        memcpy(&l_player, &sent.player, sizeof(uint));
+#if RETRO_IS_BIG_ENDIAN
+        SWAP_ENDIAN(l_room);
+#endif
+        PrintLog("NetworkSession::write() - Header=0x%02X, room=0x%08X, player=%u", sent.header, l_room, l_player);
+
         write_msgs_.push_back(sent);
         if (repeat) {
             this->repeat = sent;
@@ -50,12 +541,10 @@ public:
 
     void start()
     {
+        PrintLog("NetworkSession::start()");
+        memset(&repeat, 0, sizeof(ServerPacket));
         repeat.header = 0x80;
         running       = true;
-        ServerPacket sent;
-        sent.header = CL_REQUEST_CODE;
-        sent.room   = 0x1F2F3F4F;
-        write_msgs_.push_back(sent);
     }
 
     void close()
@@ -91,23 +580,26 @@ public:
         while (!write_msgs_.empty()) {
             ServerPacket *send = &write_msgs_.front();
             StrCopy(send->game, networkGame);
+            PrintLog("NetworkSession::run() - Sending packet: header=0x%02X, room=0x%08X, player=%u", send->header, send->room, send->player);
+#if RETRO_IS_BIG_ENDIAN
+            ServerPacket packet = *send;
+            SwapPacketEndian(&packet, false);
+            socket.send_to(asio::buffer(&packet, sizeof(ServerPacket)), endpoint);
+#else
             socket.send_to(asio::buffer(send, sizeof(ServerPacket)), endpoint);
+#endif
             write_msgs_.pop_front();
-            if (send->header == 0xFF)
+            if (send->header == 0xFF) {
+                PrintLog("NetworkSession::run() - CL_LEAVE sent, stopping session");
                 session->running = false;
+            }
         }
         if (!awaitingReceive)
             do_read();
         if (repeat.header != 0x80 && retried) {
             retried = false;
             timer.expires_from_now(asio::chrono::seconds(1));
-            timer.async_wait([&](const asio::error_code &) {
-                retried     = true;
-                repeat.room = room;
-                StrCopy(repeat.game, networkGame);
-                if (retries++ == 10)
-                    socket.send_to(asio::buffer(&repeat, sizeof(ServerPacket)), endpoint);
-            });
+            timer.async_wait(std::bind(&NetworkSession::handle_timer, this, std::placeholders::_1));
         }
         else if (repeat.header == 0x80)
             retries = 0;
@@ -137,6 +629,7 @@ public:
     void leave()
     {
         ServerPacket send;
+        memset(&send, 0, sizeof(ServerPacket));
         send.header = CL_LEAVE;
         vsPlaying   = false;
         write(send);
@@ -148,78 +641,7 @@ private:
         if (awaitingReceive)
             return;
         awaitingReceive = true;
-        socket.async_receive(asio::buffer(&read_msg_, sizeof(ServerPacket)), [&](const asio::error_code &ec, size_t bytes) {
-            awaitingReceive = false; // async, not threaded. this is safe
-            if (ec || !session->running)
-                return;
-            // it's ok to use preformace counter; we're in a different thread and slowdown is safe
-            lastPing       = ((SDL_GetPerformanceCounter() - lastTime) * 1000.0 / SDL_GetPerformanceFrequency());
-            lastTime       = SDL_GetPerformanceCounter();
-            waitingForPing = false;
-            if (!code) {
-                if (read_msg_.header == SV_CODES && read_msg_.player) {
-                    code = read_msg_.player;
-                }
-                return;
-            }
-
-            switch (read_msg_.header) {
-                case SV_CODES: {
-                    if (vsPlaying)
-                        return;
-                    room = read_msg_.room;
-                    if (read_msg_.data.multiData.type > 2) {
-                        dcError = 3;
-                        leave();
-                        return;
-                    }
-
-                    if (read_msg_.data.multiData.type - 1) {
-                        partner = *read_msg_.data.multiData.data;
-                        Receive2PVSMatchCode(room);
-                        repeat.header = 0x80;
-                        return;
-                    }
-                    break;
-                }
-                case SV_NEW_PLAYER: {
-                    if (partner)
-                        return;
-                    repeat.header = 0x80;
-                    vsPlayerID    = 0;
-                    partner       = read_msg_.player;
-                    Receive2PVSMatchCode(room);
-                    return;
-                }
-                case SV_DATA_VERIFIED:
-                // fallthrough
-                case SV_DATA: {
-                    Receive2PVSData(&read_msg_.data.multiData);
-                    return;
-                }
-                case SV_RECEIVED: {
-                    if (repeat.header == CL_DATA_VERIFIED)
-                        repeat.header = CL_QUERY_VERIFICATION;
-                    return;
-                }
-                case SV_VERIFY_CLEAR: {
-                    repeat.header = 0x80;
-                    return;
-                }
-                case SV_NO_ROOM: {
-                    leave();
-                    dcError = 5;
-                    return;
-                }
-                case SV_LEAVE: {
-                    if (read_msg_.player != partner)
-                        return;
-                    leave();
-                    dcError = 1;
-                    return;
-                }
-            }
-        });
+        socket.async_receive(asio::buffer(&read_msg_, sizeof(ServerPacket)), std::bind(&NetworkSession::handle_read, this, std::placeholders::_1, std::placeholders::_2));
     }
 
     asio::io_context &io_context;
@@ -229,59 +651,423 @@ private:
     ServerPacket read_msg_;
     DataQueue write_msgs_;
 
+    void handle_timer(const asio::error_code &ec)
+    {
+        retried     = true;
+        if (repeat.header != CL_REQUEST_CODE && repeat.header != CL_JOIN)
+            repeat.room = room;
+        StrCopy(repeat.game, networkGame);
+        PrintLog("NetworkSession::handle_timer() - Retrying packet: header=0x%02X, retries=%u", repeat.header, retries);
+        if (retries++ == 10) {
+#if RETRO_IS_BIG_ENDIAN
+            ServerPacket packet = repeat;
+            SwapPacketEndian(&packet, false);
+            socket.send_to(asio::buffer(&packet, sizeof(ServerPacket)), endpoint);
+#else
+            socket.send_to(asio::buffer(&repeat, sizeof(ServerPacket)), endpoint);
+#endif
+        }
+    }
+
+    void handle_read(const asio::error_code &ec, size_t bytes)
+    {
+        awaitingReceive = false; // async, not threaded. this is safe
+        if (ec || !session->running)
+            return;
+
+#if RETRO_IS_BIG_ENDIAN
+        SwapPacketEndian(&read_msg_, true);
+#endif
+
+        // it's ok to use preformace counter; we're in a different thread and slowdown is safe
+        lastPing       = ((SDL_GetPerformanceCounter() - lastTime) * 1000.0 / SDL_GetPerformanceFrequency());
+        lastTime       = SDL_GetPerformanceCounter();
+        uint l_room = read_msg_.room;
+#if RETRO_IS_BIG_ENDIAN
+        SWAP_ENDIAN(l_room);
+#endif
+        PrintLog("NetworkSession::handle_read() - Received packet: header=0x%02X, room=0x%08X, player=%u, ping=%.1fms", read_msg_.header, l_room, read_msg_.player, lastPing);
+        waitingForPing = false;
+        if (!code) {
+            if (read_msg_.header == SV_CODES && read_msg_.player) {
+                code = read_msg_.player;
+                PrintLog("NetworkSession::handle_read() - Assigned player code: %u", code);
+                repeat.header = 0x80;
+            }
+            else {
+                return;
+            }
+        }
+
+        switch (read_msg_.header) {
+            case SV_CODES: {
+                if (vsPlaying)
+                    return;
+                room = read_msg_.room;
+                PrintLog("NetworkSession::handle_read() - SV_CODES: room=0x%08X, type=%d", room, read_msg_.data.multiData.type);
+                if (read_msg_.data.multiData.type > 2) {
+                    PrintLog("NetworkSession::handle_read() - Room full");
+                    dcError = 3;
+                    leave();
+                    return;
+                }
+
+                if (read_msg_.data.multiData.type - 1) {
+                    partner = *read_msg_.data.multiData.data;
+                    PrintLog("NetworkSession::handle_read() - Match joined, partner=%u", partner);
+                    repeat.header = 0x80;
+                    Receive2PVSMatchCode(room);
+                    return;
+                }
+                break;
+            }
+            case SV_NEW_PLAYER: {
+                if (partner)
+                    return;
+                repeat.header = 0x80;
+                vsPlayerID    = 0;
+                partner       = read_msg_.player;
+                PrintLog("NetworkSession::handle_read() - SV_NEW_PLAYER: partner=%u", partner);
+                Receive2PVSMatchCode(room);
+                return;
+            }
+            case SV_DATA_VERIFIED:
+            // fallthrough
+            case SV_DATA: {
+                Receive2PVSData(&read_msg_.data.multiData);
+                return;
+            }
+            case SV_RECEIVED: {
+                if (repeat.header == CL_DATA_VERIFIED)
+                    repeat.header = CL_QUERY_VERIFICATION;
+                return;
+            }
+            case SV_VERIFY_CLEAR: {
+                repeat.header = 0x80;
+                return;
+            }
+            case SV_NO_ROOM: {
+                leave();
+                dcError = 5;
+                return;
+            }
+            case SV_LEAVE: {
+                if (read_msg_.player != partner)
+                    return;
+                leave();
+                dcError = 1;
+                return;
+            }
+        }
+    }
+
     bool writing = false;
 
     int attempts;
 };
+#endif
 
+#if RETRO_PLATFORM == RETRO_PS3
+struct RelayRoom {
+    uint roomCode;
+    struct sockaddr_in player1_addr;
+    struct sockaddr_in player2_addr;
+    uint player1_id;
+    uint player2_id;
+    bool player1_active;
+    bool player2_active;
+};
+
+#define MAX_RELAY_ROOMS 32
+static RelayRoom relayRooms[MAX_RELAY_ROOMS];
+static int relaySocket = -1;
+static bool relayThreadRunning = false;
+
+static void relayLoop(uint64_t arg)
+{
+    relaySocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (relaySocket < 0) {
+        PrintLog("RelayServer - Failed to create socket: %d", relaySocket);
+        relayThreadRunning = false;
+        sys_ppu_thread_exit(0);
+        return;
+    }
+
+    struct sockaddr_in serverAddr;
+    memset(&serverAddr, 0, sizeof(serverAddr));
+    serverAddr.sin_len    = sizeof(serverAddr);
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_port   = htons(networkPort);
+    serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    if (bind(relaySocket, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) < 0) {
+        PrintLog("RelayServer - Failed to bind to port %d", networkPort);
+        socketclose(relaySocket);
+        relaySocket = -1;
+        relayThreadRunning = false;
+        sys_ppu_thread_exit(0);
+        return;
+    }
+
+    // Non-blocking
+    int on = 1;
+    setsockopt(relaySocket, SOL_SOCKET, SO_NBIO, (const char*)&on, sizeof(on));
+
+    PrintLog("RelayServer - Started on port %d", networkPort);
+    srand((unsigned int)sys_time_get_system_time());
+    memset(relayRooms, 0, sizeof(relayRooms));
+
+    ServerPacket packet;
+    struct sockaddr_in clientAddr;
+    socklen_t addrLen = sizeof(clientAddr);
+
+    while (relayThreadRunning) {
+        int res = recvfrom(relaySocket, (char*)&packet, sizeof(ServerPacket), 0, (struct sockaddr *)&clientAddr, &addrLen);
+        if (res > 0) {
+            uint room_le;
+            memcpy(&room_le, &packet.room, sizeof(uint));
+            uint room_host = room_le;
+            SWAP_ENDIAN(room_host);
+            
+            uint player_le;
+            memcpy(&player_le, &packet.player, sizeof(uint));
+            uint player_host = player_le;
+            SWAP_ENDIAN(player_host);
+
+            if (packet.header == CL_REQUEST_CODE) {
+                PrintLog("RelayServer - Received CL_REQUEST_CODE from %s", inet_ntoa(clientAddr.sin_addr));
+                int roomIdx = -1;
+                for (int i = 0; i < MAX_RELAY_ROOMS; ++i) {
+                    if (!relayRooms[i].roomCode) {
+                        roomIdx = i;
+                        break;
+                    }
+                }
+
+                if (roomIdx >= 0) {
+                    relayRooms[roomIdx].roomCode = (uint)rand() | 0x10;
+                    relayRooms[roomIdx].player1_addr = clientAddr;
+                    relayRooms[roomIdx].player1_id = (uint)rand() % 1000 + 1;
+                    relayRooms[roomIdx].player1_active = true;
+                    relayRooms[roomIdx].player2_active = false;
+                    
+                    ServerPacket response;
+                    memset(&response, 0, sizeof(ServerPacket));
+                    response.header = SV_CODES;
+                    StrCopy(response.game, packet.game);
+                    
+                    uint r_room = relayRooms[roomIdx].roomCode;
+                    uint r_player = relayRooms[roomIdx].player1_id;
+                    int r_type = 1; // Host type
+                    SWAP_ENDIAN(r_room);
+                    SWAP_ENDIAN(r_player);
+                    SWAP_ENDIAN(r_type);
+                    memcpy(&response.room, &r_room, sizeof(uint));
+                    memcpy(&response.player, &r_player, sizeof(uint));
+                    memcpy(&response.data.multiData.type, &r_type, sizeof(int));
+
+                    sendto(relaySocket, (const char*)&response, sizeof(ServerPacket), 0, (struct sockaddr *)&clientAddr, sizeof(clientAddr));
+                    PrintLog("RelayServer - Created room 0x%08X for player %u", relayRooms[roomIdx].roomCode, relayRooms[roomIdx].player1_id);
+                }
+            }
+            else if (packet.header == CL_JOIN) {
+                PrintLog("RelayServer - Received CL_JOIN for room 0x%08X", room_host);
+                if (room_host == 0) {
+                    PrintLog("RelayServer - Ignoring JOIN for room 0");
+                    continue;
+                }
+                int roomIdx = -1;
+                for (int i = 0; i < MAX_RELAY_ROOMS; ++i) {
+                    if (relayRooms[i].roomCode == room_host) {
+                        roomIdx = i;
+                        break;
+                    }
+                }
+
+                if (roomIdx >= 0 && !relayRooms[roomIdx].player2_active) {
+                    relayRooms[roomIdx].player2_addr = clientAddr;
+                    relayRooms[roomIdx].player2_id = (uint)rand() % 1000 + 1001;
+                    relayRooms[roomIdx].player2_active = true;
+
+                    ServerPacket response;
+                    memset(&response, 0, sizeof(ServerPacket));
+                    response.header = SV_CODES;
+                    StrCopy(response.game, packet.game);
+                    
+                    uint r_room = relayRooms[roomIdx].roomCode;
+                    uint r_player = relayRooms[roomIdx].player2_id;
+                    int r_type = 2; // Join type
+                    SWAP_ENDIAN(r_room);
+                    SWAP_ENDIAN(r_player);
+                    SWAP_ENDIAN(r_type);
+                    memcpy(&response.room, &r_room, sizeof(uint));
+                    memcpy(&response.player, &r_player, sizeof(uint));
+                    memcpy(&response.data.multiData.type, &r_type, sizeof(int));
+                    
+                    uint partner = relayRooms[roomIdx].player1_id;
+                    SWAP_ENDIAN(partner);
+                    memcpy(response.data.multiData.data, &partner, sizeof(uint));
+
+                    sendto(relaySocket, (const char*)&response, sizeof(ServerPacket), 0, (struct sockaddr *)&clientAddr, sizeof(clientAddr));
+                    
+                    // Notify Host
+                    memset(&response, 0, sizeof(ServerPacket));
+                    response.header = SV_NEW_PLAYER;
+                    StrCopy(response.game, packet.game);
+                    memcpy(&response.room, &r_room, sizeof(uint));
+                    uint r_player2 = relayRooms[roomIdx].player2_id;
+                    SWAP_ENDIAN(r_player2);
+                    memcpy(&response.player, &r_player2, sizeof(uint));
+                    
+                    sendto(relaySocket, (const char*)&response, sizeof(ServerPacket), 0, (struct sockaddr *)&relayRooms[roomIdx].player1_addr, sizeof(relayRooms[roomIdx].player1_addr));
+                    PrintLog("RelayServer - Player %u joined room 0x%08X", relayRooms[roomIdx].player2_id, room_host);
+                } else {
+                    ServerPacket response;
+                    memset(&response, 0, sizeof(ServerPacket));
+                    response.header = SV_NO_ROOM;
+                    sendto(relaySocket, (const char*)&response, sizeof(ServerPacket), 0, (struct sockaddr *)&clientAddr, sizeof(clientAddr));
+                }
+            }
+            else {
+                // Relay data between players
+                int roomIdx = -1;
+                for (int i = 0; i < MAX_RELAY_ROOMS; ++i) {
+                    if (relayRooms[i].roomCode == room_host) {
+                        roomIdx = i;
+                        break;
+                    }
+                }
+
+                if (roomIdx >= 0) {
+                    struct sockaddr_in *target = NULL;
+                    if (player_host == relayRooms[roomIdx].player1_id) {
+                        target = &relayRooms[roomIdx].player2_addr;
+                    } else if (player_host == relayRooms[roomIdx].player2_id) {
+                        target = &relayRooms[roomIdx].player1_addr;
+                    }
+
+                    if (target && (packet.header == CL_LEAVE)) {
+                        ServerPacket response;
+                        memset(&response, 0, sizeof(ServerPacket));
+                        response.header = SV_LEAVE;
+                        uint r_player = player_host;
+                        SWAP_ENDIAN(r_player);
+                        memcpy(&response.player, &r_player, sizeof(uint));
+                        sendto(relaySocket, (const char*)&response, sizeof(ServerPacket), 0, (struct sockaddr *)target, sizeof(struct sockaddr_in));
+                        relayRooms[roomIdx].roomCode = 0; // Close room
+                        PrintLog("RelayServer - Room 0x%08X closed", room_host);
+                    }
+                    else if (target) {
+                        sendto(relaySocket, (const char*)&packet, sizeof(ServerPacket), 0, (struct sockaddr *)target, sizeof(struct sockaddr_in));
+                    }
+                }
+            }
+        }
+        sys_timer_usleep(1000);
+    }
+
+    socketclose(relaySocket);
+    relaySocket = -1;
+    relayThreadRunning = false;
+    sys_ppu_thread_exit(0);
+}
+
+NetworkSession *session;
+#else
 std::shared_ptr<NetworkSession> session;
 asio::io_context io_context;
+#endif
+#if RETRO_PLATFORM == RETRO_PS3
+sys_ppu_thread_t netThread;
+bool netThreadRunning = false;
+
+sys_ppu_thread_t relayThread;
+#else
 std::thread loopThread;
+#endif
 
 void InitNetwork()
 {
-    try {
-        udp::resolver resolver(io_context);
-        asio::error_code ec;
 #if RETRO_PLATFORM == RETRO_PS3
-        char portBuf[16];
-        sprintf(portBuf, "%d", networkPort);
-        auto endpoint = *resolver.resolve(udp::v4(), networkHost, portBuf, ec).begin();
-#else
-        auto endpoint = *resolver.resolve(udp::v4(), networkHost, std::to_string(networkPort), ec).begin();
-#endif
-        session.reset();
-        std::shared_ptr<NetworkSession> newsession = std::make_shared<NetworkSession>(io_context, endpoint);
-        session.swap(newsession);
-    } catch (std::exception &e) {
-        Engine.onlineActive = false;
-        PrintLog("Failed to initialize networking: %s", e.what());
+    static bool netInitialised = false;
+    if (!netInitialised) {
+        InitPS3Network();
+        netInitialised = true;
     }
+
+    if (useHostServer && !relayThreadRunning) {
+        relayThreadRunning = true;
+        PrintLog("InitNetwork() - Starting Relay Server thread...");
+        int res = sys_ppu_thread_create(&relayThread, relayLoop, 0, 400, 32768, SYS_PPU_THREAD_CREATE_JOINABLE, "RelayThread");
+        if (res < 0) {
+            PrintLog("InitNetwork() - Failed to start Relay thread: %d", res);
+            relayThreadRunning = false;
+        } else {
+            PrintLog("InitNetwork() - Relay thread started successfully.");
+        }
+        
+        // When acting as host server, we connect to ourselves
+        StrCopy(networkHost, "127.0.0.1");
+    }
+
+    if (session)
+        delete session;
+    session = new NetworkSession(networkHost, networkPort);
+#else
+    udp::resolver resolver(io_context);
+    asio::error_code ec;
+    udp::endpoint endpoint = *resolver.resolve(udp::v4(), networkHost, std::to_string(networkPort), ec).begin();
+    session.reset();
+    std::shared_ptr<NetworkSession> newsession = std::make_shared<NetworkSession>(io_context, endpoint);
+    session.swap(newsession);
+#endif
 }
 
+void networkLoop(uint64_t arg)
+{
+    if (session) {
+        session->start();
+        while (session->running) {
+            session->run();
+            sys_timer_usleep(1000);
+        }
+        session->close();
+    }
+    netThreadRunning = false;
+    sys_ppu_thread_exit(0);
+}
+#else
 void networkLoop()
 {
-    try {
-        session->start();
-        while (session->running) session->run();
-        session->close();
-    } catch (std::exception &e) {
-        std::cerr << "Exception: " << e.what() << "\n";
-    }
+    session->start();
+    while (session->running) session->run();
+    session->close();
 }
-
+#endif
 void RunNetwork()
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    if (netThreadRunning) {
+        DisconnectNetwork();
+        InitNetwork();
+    }
+    netThreadRunning = true;
+    sys_ppu_thread_create(&netThread, networkLoop, 0, 500, 65536, SYS_PPU_THREAD_CREATE_JOINABLE, "NetworkingThread");
+#else
     if (loopThread.joinable()) {
         DisconnectNetwork();
         InitNetwork();
     }
     loopThread = std::thread(networkLoop);
+#endif
 }
 
 void SendData(bool verify)
 {
+    if (!session)
+        return;
     ServerPacket send;
+    memset(&send, 0, sizeof(ServerPacket));
     send.header         = CL_DATA + verify;
     send.data.multiData = multiplayerDataOUT;
     session->write(send, verify);
@@ -289,20 +1075,52 @@ void SendData(bool verify)
 
 void DisconnectNetwork(bool finalClose)
 {
-    if (session->running)
+    if (session && session->running)
         session->leave();
+#if RETRO_PLATFORM == RETRO_PS3
+    if (netThreadRunning) {
+        uint64_t exit_code;
+        sys_ppu_thread_join(netThread, &exit_code);
+    }
+
+    if (finalClose && relayThreadRunning) {
+        relayThreadRunning = false;
+        uint64_t exit_code;
+        sys_ppu_thread_join(relayThread, &exit_code);
+    }
+#else
     if (loopThread.joinable())
         loopThread.join();
+#endif
 
     if (finalClose) {
+#if RETRO_PLATFORM == RETRO_PS3
+        if (session) {
+            delete session;
+            session = NULL;
+        }
+#else
         if (session)
             session.reset();
+#endif
     }
 }
 
-void SendServerPacket(ServerPacket &send, bool repeat) { session->write(send, repeat); }
-int GetRoomCode() { return session->room; }
-void SetRoomCode(int code) { session->room = code; }
+void SendServerPacket(ServerPacket &send, bool repeat)
+{
+    if (session)
+        session->write(send, repeat);
+}
+int GetRoomCode()
+{
+    if (session)
+        return session->room;
+    return 0;
+}
+void SetRoomCode(int code)
+{
+    if (session)
+        session->room = code;
+}
 
 void SetNetworkGameName(int *a1, const char *name) { StrCopy(networkGame, name); }
-#endif

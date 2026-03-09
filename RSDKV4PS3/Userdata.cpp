@@ -274,6 +274,7 @@ void InitUserdata()
         ini.SetString("Network", "Host", (char *)"127.0.0.1");
         StrCopy(networkHost, "127.0.0.1");
         ini.SetInteger("Network", "Port", networkPort = 50);
+        ini.SetBool("Network", "HostServer", useHostServer = false);
 #endif
 
         ini.SetBool("Window", "FullScreen", Engine.startFullScreen = DEFAULT_FULLSCREEN);
@@ -426,6 +427,8 @@ void InitUserdata()
             StrCopy(networkHost, "127.0.0.1");
         if (!ini.GetInteger("Network", "Port", &networkPort))
             networkPort = 50;
+        if (!ini.GetBool("Network", "HostServer", &useHostServer))
+            useHostServer = false;
 #endif
 
         if (!ini.GetBool("Window", "FullScreen", &Engine.startFullScreen))
@@ -706,6 +709,8 @@ void WriteSettings()
     ini.SetString("Network", "Host", networkHost);
     ini.SetComment("Network", "PortComment", "The port the game will try to connect to.");
     ini.SetInteger("Network", "Port", networkPort);
+    ini.SetComment("Network", "HostServerComment", "If enabled, the PS3 will act as the Master/Relay server.");
+    ini.SetBool("Network", "HostServer", useHostServer);
 #endif
 
     ini.SetComment("Window", "FSComment", "Determines if the window will be fullscreen or not");
@@ -1013,6 +1018,7 @@ bool disableFocusPause_Store = false;
 void Connect2PVS(int *gameLength, int *itemMode)
 {
     PrintLog("Attempting to connect to 2P game (%d) (%d)", *gameLength, *itemMode);
+    vsPlaying = false;
 
     multiplayerDataIN.type = 0;
     matchValueData[0]      = 0;
@@ -1137,13 +1143,19 @@ void Receive2PVSData(MultiplayerData *data)
 
 void Receive2PVSMatchCode(int code)
 {
+    PrintLog("Receive2PVSMatchCode(0x%08X) - vsPlayerID=%d", code, vsPlayerID);
     receiveReady = true;
-    code &= 0x00000FF0;
-    code |= 0x00001000 * vsPlayerID;
-    matchValueData[matchValueWritePos++] = code;
+    
+    // RSDKv4 2P Match Code format:
+    // Bits 4-11: Room/Seed data
+    // Bit 12: Player ID (0 or 1)
+    int finalCode = code & 0x00000FF0;
+    finalCode |= 0x00001000 * (vsPlayerID & 1);
+    
+    matchValueData[matchValueWritePos++] = finalCode;
+    PrintLog("Receive2PVSMatchCode - Final code pushed: 0x%08X", finalCode);
+
     ResumeSound();
-    vsPlayerID = Engine.devMenu;
-    // Engine.devMenu  = false;
     Engine.gameMode = ENGINE_MAINGAME;
     vsPlaying       = true;
     ClearNativeObjects();
