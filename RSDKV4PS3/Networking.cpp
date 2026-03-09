@@ -165,9 +165,16 @@ public:
     ServerPacket repeat;
     ServerPacket read_msg_;
     DataQueue write_msgs_;
+    sys_lwmutex_t writeMutex __attribute__((aligned(16)));
 
     NetworkSession(const char *host, int port)
     {
+        sys_lwmutex_attribute_t attr;
+        sys_lwmutex_attribute_initialize(attr);
+        if (sys_lwmutex_create(&writeMutex, &attr) != CELL_OK) {
+            PrintLog("NetworkSession - Failed to create mutex");
+        }
+
         running         = false;
         code            = 0;
         partner         = 0;
@@ -181,6 +188,7 @@ public:
         sessionSocket = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (sessionSocket < 0) {
             PrintLog("NetworkSession - Failed to create socket: %d", sessionSocket);
+            running = false;
             return;
         }
 
@@ -211,6 +219,7 @@ public:
     ~NetworkSession()
     {
         close();
+        sys_lwmutex_destroy(&writeMutex);
     }
 
     void write(const ServerPacket &msg, bool repeat = false)
@@ -246,8 +255,11 @@ public:
         SWAP_ENDIAN(l_room);
 #endif
         PrintLog("NetworkSession::write() - Header=0x%02X, room=0x%08X, player=%u", sent.header, l_room, l_player);
-        
+
+        sys_lwmutex_lock(&writeMutex, 0);
         write_msgs_.push_back(sent);
+        sys_lwmutex_unlock(&writeMutex);
+
         if (repeat) {
             this->repeat = sent;
         }
@@ -256,6 +268,10 @@ public:
     void start()
     {
         PrintLog("NetworkSession::start()");
+        sys_lwmutex_lock(&writeMutex, 0);
+        write_msgs_.clear();
+        sys_lwmutex_unlock(&writeMutex);
+
         running       = true;
         code          = 0;
         room          = 0;
@@ -287,10 +303,16 @@ public:
     {
         if (sessionSocket < 0) return;
 
-        while (!write_msgs_.empty()) {
+        while (true) {
+            sys_lwmutex_lock(&writeMutex, 0);
+            if (write_msgs_.empty()) {
+                sys_lwmutex_unlock(&writeMutex);
+                break;
+            }
             ServerPacket sentMsg = write_msgs_.front();
             write_msgs_.pop_front();
-            
+            sys_lwmutex_unlock(&writeMutex);
+
             ServerPacket *send = &sentMsg;
             StrCopy(send->game, networkGame);
 
@@ -405,12 +427,7 @@ private:
         uint l_room, l_player;
         memcpy(&l_room, &read_msg_.room, sizeof(uint));
         memcpy(&l_player, &read_msg_.player, sizeof(uint));
-#if RETRO_IS_BIG_ENDIAN
-        SWAP_ENDIAN(l_room);
-#endif
-#if RETRO_IS_BIG_ENDIAN
-        SWAP_ENDIAN(l_room);
-#endif
+        // read_msg_ fields are already Host-endian after SwapPacketEndian
         PrintLog("NetworkSession::handle_read() - Received packet: header=0x%02X, room=0x%08X, player=%u, ping=%.1fms", read_msg_.header, l_room, l_player, lastPing);
         waitingForPing = false;
         if (!code) {
@@ -1047,10 +1064,9 @@ void networkLoop()
 void RunNetwork()
 {
 #if RETRO_PLATFORM == RETRO_PS3
-    if (netThreadRunning) {
-        DisconnectNetwork();
-        InitNetwork();
-    }
+    DisconnectNetwork();
+    InitNetwork();
+
     netThreadRunning = true;
     sys_ppu_thread_create(&netThread, networkLoop, 0, 500, 65536, SYS_PPU_THREAD_CREATE_JOINABLE, "NetworkingThread");
 #else
@@ -1075,12 +1091,16 @@ void SendData(bool verify)
 
 void DisconnectNetwork(bool finalClose)
 {
-    if (session && session->running)
-        session->leave();
+    if (session) {
+        if (session->running)
+            session->leave();
+        session->running = false; // Ensure it stops even if leave packet wasn't processed
+    }
 #if RETRO_PLATFORM == RETRO_PS3
     if (netThreadRunning) {
         uint64_t exit_code;
         sys_ppu_thread_join(netThread, &exit_code);
+        netThreadRunning = false;
     }
 
     if (finalClose && relayThreadRunning) {
