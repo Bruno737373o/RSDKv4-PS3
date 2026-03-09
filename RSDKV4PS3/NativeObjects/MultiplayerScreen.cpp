@@ -190,9 +190,9 @@ void MultiplayerScreen_Create(void *objPtr)
         self->enterCodeLabel[i]                  = CREATE_ENTITY(TextLabel);
         self->enterCodeLabel[i]->useRenderMatrix = true;
         self->enterCodeLabel[i]->fontID          = FONT_LABEL;
-        self->enterCodeLabel[i]->scale           = 0.25;
+        self->enterCodeLabel[i]->scale           = 0.2;
         self->enterCodeLabel[i]->alpha           = 0;
-        self->enterCodeLabel[i]->x               = -102.0f + (i * 27.2) + 8.0f;
+        self->enterCodeLabel[i]->x               = -56.0f + (i * 16.0f);
         self->enterCodeLabel[i]->y               = 0;
         self->enterCodeLabel[i]->z               = 16.0;
         self->enterCodeLabel[i]->state           = TEXTLABEL_STATE_IDLE;
@@ -210,7 +210,7 @@ void MultiplayerScreen_Create(void *objPtr)
         self->enterCodeSlider[i]->fontID          = FONT_LABEL;
         self->enterCodeSlider[i]->scale           = 0.25;
         self->enterCodeSlider[i]->alpha           = 0;
-        self->enterCodeSlider[i]->y               = 23.0;
+        self->enterCodeSlider[i]->y               = (i == 0) ? 24.0 : 12.0;
         self->enterCodeSlider[i]->z               = 16.0;
         self->enterCodeSlider[i]->state           = TEXTLABEL_STATE_IDLE;
         SetStringToFont8(self->enterCodeSlider[i]->text, "V", self->enterCodeSlider[i]->fontID);
@@ -220,9 +220,9 @@ void MultiplayerScreen_Create(void *objPtr)
     self->ipPrefixLabel                  = CREATE_ENTITY(TextLabel);
     self->ipPrefixLabel->useRenderMatrix = true;
     self->ipPrefixLabel->fontID          = FONT_LABEL;
-    self->ipPrefixLabel->scale           = 0.3;
+    self->ipPrefixLabel->scale           = 0.2;
     self->ipPrefixLabel->alpha           = 0;
-    self->ipPrefixLabel->x               = -140.0;
+    self->ipPrefixLabel->x               = -125.0;
     self->ipPrefixLabel->y               = 0;
     self->ipPrefixLabel->z               = 16.0;
     self->ipPrefixLabel->state           = TEXTLABEL_STATE_IDLE;
@@ -233,12 +233,12 @@ void MultiplayerScreen_Create(void *objPtr)
         self->ipDigitLabel[i]                  = CREATE_ENTITY(TextLabel);
         self->ipDigitLabel[i]->useRenderMatrix = true;
         self->ipDigitLabel[i]->fontID          = FONT_LABEL;
-        self->ipDigitLabel[i]->scale           = 0.3;
+        self->ipDigitLabel[i]->scale           = 0.2;
         self->ipDigitLabel[i]->alpha           = 0;
 
         int octet      = i / 3;
         int posInOctet = i % 3;
-        self->ipDigitLabel[i]->x     = -105.0f + (octet * 60.0f) + (posInOctet * 15.0f);
+        self->ipDigitLabel[i]->x     = -100.0f + (octet * 64.0f) + (posInOctet * 16.0f);
         self->ipDigitLabel[i]->y     = 0;
         self->ipDigitLabel[i]->z     = 16.0;
         self->ipDigitLabel[i]->state = TEXTLABEL_STATE_IDLE;
@@ -253,9 +253,9 @@ void MultiplayerScreen_Create(void *objPtr)
         self->ipDotLabel[i]                  = CREATE_ENTITY(TextLabel);
         self->ipDotLabel[i]->useRenderMatrix = true;
         self->ipDotLabel[i]->fontID          = FONT_LABEL;
-        self->ipDotLabel[i]->scale           = 0.3;
+        self->ipDotLabel[i]->scale           = 0.2;
         self->ipDotLabel[i]->alpha           = 0;
-        self->ipDotLabel[i]->x               = -105.0f + (i * 60.0f) + 45.0f;
+        self->ipDotLabel[i]->x               = -100.0f + (i * 64.0f) + 48.0f;
         self->ipDotLabel[i]->y               = 0;
         self->ipDotLabel[i]->z               = 16.0;
         self->ipDotLabel[i]->state           = TEXTLABEL_STATE_IDLE;
@@ -783,9 +783,9 @@ void MultiplayerScreen_Main(void *objPtr)
                 if (touches > 0) {
                     float w = self->enterCodeLabel[1]->x - self->enterCodeLabel[0]->x;
                     for (int i = 0; i < 8; ++i) {
-                        if (CheckTouchRect(self->enterCodeLabel[i]->x, 16.0f, w / 2, 16.0) >= 0)
+                        if (CheckTouchRect(self->enterCodeLabel[i]->x, 22.0f, w / 2, 16.0) >= 0)
                             self->touchedUpID = i;
-                        if (CheckTouchRect(self->enterCodeLabel[i]->x, -16.0f, w / 2, 16.0) >= 0)
+                        if (CheckTouchRect(self->enterCodeLabel[i]->x, -22.0f, w / 2, 16.0) >= 0)
                             self->touchedDownID = i;
                     }
 
