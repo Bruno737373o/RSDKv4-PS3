@@ -212,6 +212,20 @@ int InitRenderDevice()
     if (psgl_device && psgl_context) {
         psglMakeCurrent(psgl_context, psgl_device);
 
+        if (Engine.vsync) {
+            glEnable(GL_VSYNC_SCE);
+            glHint(GL_VSYNC_SCE, GL_NICEST);
+#if RETRO_PLATFORM == RETRO_PS3
+            cellGcmSetFlipMode(CELL_GCM_DISPLAY_VSYNC);
+#endif
+        }
+        else {
+            glDisable(GL_VSYNC_SCE);
+#if RETRO_PLATFORM == RETRO_PS3
+            cellGcmSetFlipMode(CELL_GCM_DISPLAY_HSYNC);
+#endif
+        }
+
         GLuint w, h;
         psglGetDeviceDimensions(psgl_device, &w, &h);
 

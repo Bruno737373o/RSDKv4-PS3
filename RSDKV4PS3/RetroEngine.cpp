@@ -746,6 +746,9 @@ void RetroEngine::Run()
 #if !RETRO_USE_ORIGINAL_CODE
 #if RETRO_USING_OPENGL
 #if RETRO_PLATFORM == RETRO_PS3
+                if (vsync) {
+                    cellRescSetWaitFlip(gCellGcmCurrentContext);
+                }
                 psglSwap();
 #elif RETRO_USING_SDL2
                 SDL_GL_SwapWindow(Engine.window);
