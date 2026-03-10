@@ -37,6 +37,12 @@
 #define RETRO_PACKFILE_COUNT (0x1000)
 #define RETRO_PACK_COUNT     (0x4)
 
+#if RETRO_PLATFORM == RETRO_PS3
+#define RETRO_READER_BUFSIZE (0x20000)
+#else
+#define RETRO_READER_BUFSIZE (0x2000)
+#endif
+
 struct FileInfo {
     char fileName[0x100];
     int fileSize;
@@ -69,6 +75,7 @@ struct RSDKFileInfo {
 struct RSDKContainer {
     RSDKFileInfo files[RETRO_PACKFILE_COUNT];
     char packNames[RETRO_PACK_COUNT][0x400];
+    FileIO *packFileHandle[RETRO_PACK_COUNT];
     int fileCount;
     int packCount;
 };
@@ -76,7 +83,7 @@ struct RSDKContainer {
 extern RSDKContainer rsdkContainer;
 
 extern char fileName[0x100];
-extern byte fileBuffer[0x2000];
+extern byte fileBuffer[RETRO_READER_BUFSIZE];
 extern int fileSize;
 extern int vFileSize;
 extern int readPos;
@@ -111,6 +118,12 @@ inline void CloseRSDKContainers()
 {
     for (int i = 0; i < 4; ++i) {
         strcpy(rsdkContainer.packNames[i], "");
+#if RETRO_PLATFORM == RETRO_PS3
+        if (rsdkContainer.packFileHandle[i]) {
+            fClose(rsdkContainer.packFileHandle[i]);
+            rsdkContainer.packFileHandle[i] = NULL;
+        }
+#endif
     }
     rsdkContainer.packCount = 0;
     rsdkContainer.fileCount = 0;
@@ -124,8 +137,20 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo);
 inline bool CloseFile()
 {
     int result = 0;
-    if (cFileHandle)
+    if (cFileHandle) {
+#if RETRO_PLATFORM == RETRO_PS3
+        bool isPack = false;
+        for (int i = 0; i < RETRO_PACK_COUNT; i++) {
+            if (cFileHandle == rsdkContainer.packFileHandle[i]) {
+                isPack = true;
+                break;
+            }
+        }
+        if (!isPack) result = fClose(cFileHandle);
+#else
         result = fClose(cFileHandle);
+#endif
+    }
 
     cFileHandle = NULL;
     return result;
@@ -138,8 +163,8 @@ void FileSkip(int count);
 
 inline size_t FillFileBuffer()
 {
-    if (readPos + 0x2000 <= fileSize)
-        readSize = 0x2000;
+    if (readPos + RETRO_READER_BUFSIZE <= fileSize)
+        readSize = RETRO_READER_BUFSIZE;
     else
         readSize = fileSize - readPos;
 

@@ -760,6 +760,13 @@ void SwapMusicTrack(const char *filePath, byte trackID, uint loopPoint, uint rat
     }
 }
 
+#if RETRO_PLATFORM == RETRO_PS3
+void LoadMusic_Thread(uint64_t arg) {
+    LoadMusic(NULL);
+    sys_ppu_thread_exit(0);
+}
+#endif
+
 bool PlayMusic(int track, int musStartPos)
 {
     if (!audioEnabled)
@@ -777,7 +784,12 @@ bool PlayMusic(int track, int musStartPos)
             musicStartPos     = musStartPos;
             currentMusicTrack = track;
             musicStatus       = MUSIC_LOADING;
+#if RETRO_PLATFORM == RETRO_PS3
+            sys_ppu_thread_t thread;
+            sys_ppu_thread_create(&thread, LoadMusic_Thread, 0, 100, 0x10000, SYS_PPU_THREAD_CREATE_JOINABLE, "MusicLoadThread");
+#else
             LoadMusic(NULL);
+#endif
             return true;
         }
         else {

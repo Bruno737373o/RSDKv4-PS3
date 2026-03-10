@@ -5,7 +5,11 @@
 RSDKContainer rsdkContainer;
 
 char fileName[0x100];
-byte fileBuffer[0x2000];
+#if RETRO_PLATFORM == RETRO_PS3
+byte fileBuffer[RETRO_READER_BUFSIZE] __attribute__((aligned(64)));
+#else
+byte fileBuffer[RETRO_READER_BUFSIZE];
+#endif
 int fileSize          = 0;
 int vFileSize         = 0;
 int readPos           = 0;
@@ -52,6 +56,9 @@ bool CheckRSDKFile(const char *filePath)
 #endif
 
         StrCopy(rsdkContainer.packNames[rsdkContainer.packCount], filePathBuffer);
+#if RETRO_PLATFORM == RETRO_PS3
+        rsdkContainer.packFileHandle[rsdkContainer.packCount] = cFileHandle;
+#endif
 
         byte b[4];
         fRead(&b, 2, 1, cFileHandle);
@@ -75,7 +82,9 @@ bool CheckRSDKFile(const char *filePath)
             rsdkContainer.fileCount++;
         }
 
+#if RETRO_PLATFORM != RETRO_PS3
         fClose(cFileHandle);
+#endif
         cFileHandle = NULL;
         if (LoadFile("Bytecode/GlobalCode.bin", &info)) {
             Engine.usingBytecode = true;
@@ -205,7 +214,11 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
     if (fileIndex != -1 && !forceFolder) {
         RSDKFileInfo *file = &rsdkContainer.files[fileIndex];
         packID      = file->packID;
+#if RETRO_PLATFORM == RETRO_PS3
+        cFileHandle = rsdkContainer.packFileHandle[file->packID];
+#else
         cFileHandle = fOpen(rsdkContainer.packNames[file->packID], "rb");
+#endif
         if (cFileHandle) {
             fSeek(cFileHandle, 0, SEEK_END);
             fileSize = (int)fTell(cFileHandle);
@@ -270,7 +283,11 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
                 continue;
 
             packID      = file->packID;
+#if RETRO_PLATFORM == RETRO_PS3
+            cFileHandle = rsdkContainer.packFileHandle[file->packID];
+#else
             cFileHandle = fOpen(rsdkContainer.packNames[file->packID], "rb");
+#endif
             if (cFileHandle) {
                 fSeek(cFileHandle, 0, SEEK_END);
                 fileSize = (int)fTell(cFileHandle);
@@ -456,11 +473,22 @@ void FileRead(void *dest, int size)
         }
         else {
             while (size > 0) {
-                if (bufferPosition == readSize)
-                    FillFileBuffer();
+                if (bufferPosition == readSize) {
+                    if (FillFileBuffer() == 0)
+                        break;
+                }
 
-                *data++ = fileBuffer[bufferPosition++];
-                size--;
+                int readCount = readSize - bufferPosition;
+                if (readCount > size)
+                    readCount = size;
+
+                if (readCount <= 0)
+                    break;
+
+                memcpy(data, &fileBuffer[bufferPosition], readCount);
+                size -= readCount;
+                data += readCount;
+                bufferPosition += readCount;
             }
         }
     }
@@ -520,10 +548,20 @@ void FileSkip(int count)
         }
         else {
             while (count > 0) {
-                if (bufferPosition == readSize)
-                    FillFileBuffer();
-                bufferPosition++;
-                count--;
+                if (bufferPosition == readSize) {
+                    if (FillFileBuffer() == 0)
+                        break;
+                }
+
+                int skipCount = readSize - bufferPosition;
+                if (skipCount > count)
+                    skipCount = count;
+
+                if (skipCount <= 0)
+                    break;
+
+                count -= skipCount;
+                bufferPosition += skipCount;
             }
         }
     }
@@ -555,7 +593,11 @@ void SetFileInfo(FileInfo *fileInfo)
 #else
     if (Engine.usingDataFile) {
 #endif
+#if RETRO_PLATFORM == RETRO_PS3
+        cFileHandle = rsdkContainer.packFileHandle[fileInfo->packID];
+#else
         cFileHandle = fOpen(rsdkContainer.packNames[fileInfo->packID], "rb");
+#endif
         if (cFileHandle) {
             virtualFileOffset = fileInfo->virtualFileOffset;
             vFileSize         = fileInfo->vfileSize;
