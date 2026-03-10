@@ -65,6 +65,11 @@ int vsnprintf(char *str, size_t size, const char *format, va_list ap);
 #define strcasecmp strcasecmp_ps3
 #define strncasecmp strncasecmp_ps3
 
+static inline uint64_t GetSystemTime()
+{
+    return sys_time_get_system_time();
+}
+
 static inline int strcasecmp_ps3(const char *s1, const char *s2) {
     while (*s1 && (tolower((unsigned char)*s1) == tolower((unsigned char)*s2))) {
         s1++;
