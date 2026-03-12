@@ -30,6 +30,24 @@ bool vsPlaying   = false;
 int partnerReadyList  = -1;
 int partnerReadyStage = -1;
 bool partnerIsLoading = false;
+int partnerPlayerID   = -1;
+
+void ResetNetworkSync()
+{
+    partnerReadyList  = -1;
+    partnerReadyStage = -1;
+    partnerIsLoading  = false;
+    partnerPlayerID   = -1;
+    receiveReady       = false;
+    matchValueReadPos  = 0;
+    matchValueWritePos = 0;
+    multiplayerDataIN.type = 0;
+    multiplayerDataOUT.type = 0;
+    memset(matchValueData, 0, sizeof(matchValueData));
+    memset(multiplayerDataIN.data, 0, sizeof(multiplayerDataIN.data));
+    memset(multiplayerDataOUT.data, 0, sizeof(multiplayerDataOUT.data));
+    sendCounter = 0;
+}
 
 int sendCounter = 0;
 
@@ -1042,14 +1060,7 @@ void Connect2PVS(int *gameLength, int *itemMode)
     PrintLog("Attempting to connect to 2P game (%d) (%d)", *gameLength, *itemMode);
     vsPlaying = false;
 
-    partnerReadyList  = -1;
-    partnerReadyStage = -1;
-
-    multiplayerDataIN.type = 0;
-    matchValueData[0]      = 0;
-    matchValueData[1]      = 0;
-    matchValueReadPos      = 0;
-    matchValueWritePos     = 0;
+    ResetNetworkSync();
 #if RETRO_USE_NETWORKING
     Engine.gameMode = ENGINE_CONNECT2PVS;
 #endif
@@ -1074,6 +1085,7 @@ void Disconnect2PVS()
         disableFocusPause = disableFocusPause_Store;
         // Engine.devMenu    = vsPlayerID;
         vsPlaying = false;
+        ResetNetworkSync();
         DisconnectNetwork();
         InitNetwork();
 #endif
@@ -1148,8 +1160,7 @@ void TransmitGlobal(int *globalValue, const char *globalName)
     multiplayerDataOUT.data[1] = *globalValue;
     if (Engine.onlineActive) {
 #if RETRO_USE_NETWORKING
-        // Use verified send for global variable transmissions
-        SendData(true);
+        SendData();
 #endif
     }
 }
@@ -1160,30 +1171,48 @@ void SendStageReady(bool is_loading)
 #if RETRO_USE_NETWORKING
         ServerPacket send;
         memset(&send, 0, sizeof(ServerPacket));
-        send.header = CL_DATA_VERIFIED;
+        send.header = CL_DATA; // Unreliable is safer here to prevent stalls on high latency
         send.data.multiData.type = 3; // STAGE_READY
         send.data.multiData.data[0] = activeStageList;
         send.data.multiData.data[1] = stageListPosition;
         send.data.multiData.data[2] = is_loading;
-        SendServerPacket(send, true);
+        send.data.multiData.data[3] = vsPlayerID;
+        SendServerPacket(send, false);
 #endif
     }
 }
 
 void Receive2PVSData(MultiplayerData *data)
 {
-    receiveReady = true;
+    // Ignore script-level packets during loading to prevent stale data
+    // from causing instant results (e.g. Draw screen) in the next level.
+    bool ignoreScriptData = (stageMode == STAGEMODE_LOAD);
+
     switch (data->type) {
-        case 0: matchValueData[matchValueWritePos++] = data->data[0]; break;
-        case 1:
-            multiplayerDataIN.type = 1;
-            memcpy(multiplayerDataIN.data, data->data, sizeof(Entity));
+        case 0:
+            if (!ignoreScriptData) {
+                matchValueData[matchValueWritePos++] = data->data[0];
+                receiveReady                         = true;
+            }
             break;
-        case 2: globalVariables[data->data[0]] = data->data[1]; break;
+        case 1:
+            if (!ignoreScriptData) {
+                multiplayerDataIN.type = 1;
+                memcpy(multiplayerDataIN.data, data->data, sizeof(Entity));
+                receiveReady = true;
+            }
+            break;
+        case 2:
+            if (!ignoreScriptData) {
+                globalVariables[data->data[0]] = data->data[1];
+                receiveReady                   = true;
+            }
+            break;
         case 3:
             partnerReadyList  = data->data[0];
             partnerReadyStage = data->data[1];
             partnerIsLoading  = data->data[2];
+            partnerPlayerID   = data->data[3];
             break;
     }
 }

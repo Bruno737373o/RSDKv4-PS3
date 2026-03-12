@@ -7,6 +7,17 @@
 #include <netex/net.h>
 #include <netex/libnetctl.h>
 #include <arpa/inet.h>
+#include <sysutil/sysutil_common.h>
+
+void PS3SysutilCallback(uint64_t status, uint64_t param, void *userdata)
+{
+    (void)param;
+    (void)userdata;
+    switch (status) {
+        case CELL_SYSUTIL_REQUEST_EXITGAME: Engine.running = false; break;
+        default: break;
+    }
+}
 
 void InitPS3Network()
 {
@@ -92,6 +103,8 @@ bool ProcessEvents()
 {
 #if RETRO_PLATFORM == RETRO_PS3
     cellSysutilCheckCallback();
+    if (!Engine.running)
+        return false;
 #endif
 #if !RETRO_USE_ORIGINAL_CODE
 #if RETRO_USING_SDL1 || RETRO_USING_SDL2
@@ -338,6 +351,9 @@ bool ProcessEvents()
 
 void RetroEngine::Init()
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    cellSysutilRegisterCallback(0, PS3SysutilCallback, NULL);
+#endif
     initialised      = false;
     running          = false;
     deltaTime        = 0;
@@ -444,6 +460,9 @@ void RetroEngine::Init()
         closedir(scriptsDir);
         PrintLog("External Scripts folder detected, forcing TxtScripts mode.");
     }
+#endif
+#if RETRO_USE_NETWORKING
+    InitNetwork();
 #endif
 
     char dest[0x200];
@@ -774,6 +793,7 @@ void RetroEngine::Run()
     ReleaseAudioDevice();
 #if RETRO_PLATFORM == RETRO_PS3
     ExitPS3Audio();
+    cellSysutilUnregisterCallback(0);
 #endif
     ReleaseRenderDevice();
 #if !RETRO_USE_ORIGINAL_CODE

@@ -389,9 +389,15 @@ private:
 
         struct sockaddr_in from;
         socklen_t fromlen = sizeof(from);
-        int res = recvfrom(sessionSocket, (char*)&read_msg_, sizeof(ServerPacket), 0, (struct sockaddr *)&from, &fromlen);
-        if (res > 0) {
-            handle_read(res);
+        // Drain the socket buffer to process all pending packets in a single frame
+        while (true) {
+            int res = recvfrom(sessionSocket, (char*)&read_msg_, sizeof(ServerPacket), 0, (struct sockaddr *)&from, &fromlen);
+            if (res > 0) {
+                handle_read(res);
+            }
+            else {
+                break;
+            }
         }
     }
 

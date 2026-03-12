@@ -68,6 +68,9 @@ int main(int argc, char *argv[])
     }
 #endif
 
+#if RETRO_PLATFORM == RETRO_PS3
+    sys_process_exit(0);
+#endif
     return 0;
 }
 

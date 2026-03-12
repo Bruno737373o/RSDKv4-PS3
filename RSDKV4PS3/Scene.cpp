@@ -273,10 +273,10 @@ void ProcessStage(void)
                 lastHeartbeat = GetSystemTime();
             }
 
-            // If partner is in a different stage and we are not the one yielding, follow them
-            if (partnerReadyList != -1 && (partnerReadyList != activeStageList || partnerReadyStage != stageListPosition)) {
-                if (!partnerIsLoading) {
-                    PrintLog("Desync detected! Following partner to stage %d:%d", partnerReadyList, partnerReadyStage);
+            // Host Authority: Guest follows Host choices (including Game Over/Results transitions)
+            if (partnerReadyList != -1 && !partnerIsLoading && (partnerReadyList != activeStageList || partnerReadyStage != stageListPosition)) {
+                if (vsPlayerID != 0 && partnerPlayerID == 0) { // We are Guest, Partner is Host
+                    PrintLog("Match end or desync! Guest following Host to stage %d:%d", partnerReadyList, partnerReadyStage);
                     InitStartingStage(partnerReadyList, partnerReadyStage, playerListPos);
                     return;
                 }
@@ -420,10 +420,10 @@ void ProcessStage(void)
                     lastHeartbeat = GetSystemTime();
                 }
 
-                // If partner is in a different stage and we are not the one yielding, follow them
-                if (partnerReadyList != -1 && (partnerReadyList != activeStageList || partnerReadyStage != stageListPosition)) {
-                    if (!partnerIsLoading) {
-                        PrintLog("Desync detected (2P)! Following partner to stage %d:%d", partnerReadyList, partnerReadyStage);
+                // Host Authority: Guest follows Host choices
+                if (partnerReadyList != -1 && !partnerIsLoading && (partnerReadyList != activeStageList || partnerReadyStage != stageListPosition)) {
+                    if (vsPlayerID != 0 && partnerPlayerID == 0) { // We are Guest, Partner is Host
+                        PrintLog("Match end or desync! Guest following Host to stage %d:%d", partnerReadyList, partnerReadyStage);
                         InitStartingStage(partnerReadyList, partnerReadyStage, playerListPos);
                         return;
                     }
@@ -869,6 +869,10 @@ void LoadStageFiles(void)
 
     if (vsPlaying) {
         PrintLog("Synchronizing stage load with partner...");
+
+        // Initial update to see if partner already started loading something else
+        UpdateNetwork();
+
         // Always reset to ensure we get a fresh signal for this specific load
         partnerReadyList  = -1;
         partnerReadyStage = -1;
@@ -890,21 +894,33 @@ void LoadStageFiles(void)
             if (!vsPlaying || dcError)
                 break;
 
-            // If partner is already in a different stage and NOT loading, we MUST follow them.
-            // This handles the case where one player chose a level and the other was late.
-            if (partnerReadyList != -1 && !partnerIsLoading && (partnerReadyList != activeStageList || partnerReadyStage != stageListPosition)) {
-                PrintLog("Partner is already in stage %d:%d. Aborting current load to follow.", partnerReadyList, partnerReadyStage);
-                InitStartingStage(partnerReadyList, partnerReadyStage, playerListPos);
-                return;
-            }
+            // Continually reset script-related buffers during handshake to ensure
+            // NO stale game data (like match results) leaks into the next level.
+            multiplayerDataIN.type = 0;
+            matchValueReadPos      = 0;
+            matchValueWritePos     = 0;
+            receiveReady           = false;
 
-            // If we are both loading different stages, Host wins.
+            // Host Authority Logic:
+            // 1. If Partner is LOADING a different stage
             if (partnerIsLoading && (partnerReadyList != activeStageList || partnerReadyStage != stageListPosition)) {
-                if (vsPlayerID != 0) { // We are Guest, we yield.
+                // If we are Guest (vsPlayerID != 0) and Partner is Host (partnerPlayerID == 0), we yield.
+                if (vsPlayerID != 0 && partnerPlayerID == 0) {
                     PrintLog("Yielding to Host's stage choice: %d:%d", partnerReadyList, partnerReadyStage);
                     InitStartingStage(partnerReadyList, partnerReadyStage, playerListPos);
                     return;
                 }
+            }
+            // 2. If Partner is ALREADY in a different stage (not loading anymore)
+            else if (partnerReadyList != -1 && !partnerIsLoading && (partnerReadyList != activeStageList || partnerReadyStage != stageListPosition)) {
+                // If we are Guest and Partner is Host, we MUST follow them.
+                if (vsPlayerID != 0 && partnerPlayerID == 0) {
+                    PrintLog("Host is already in stage %d:%d. Aborting current load to follow.", partnerReadyList, partnerReadyStage);
+                    InitStartingStage(partnerReadyList, partnerReadyStage, playerListPos);
+                    return;
+                }
+                // If we are Host and Partner (Guest) is already in a different stage, they are likely stuck 
+                // in an old state or desynced. We continue waiting for them to catch up to our choice.
             }
 
             // Success condition: Partner is ready for OUR stage (either loading or already there)
