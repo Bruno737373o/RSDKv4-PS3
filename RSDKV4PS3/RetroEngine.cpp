@@ -356,6 +356,7 @@ void RetroEngine::Init()
 #endif
     initialised      = false;
     running          = false;
+    hardReset        = false;
     deltaTime        = 0;
     gameMode         = ENGINE_MAINGAME;
     language         = RETRO_EN;
@@ -425,6 +426,7 @@ void RetroEngine::Init()
 #if RETRO_USE_MOD_LOADER
     modMenuCalled = false;
     forceSonic1   = false;
+    modloaderPS3  = false;
 #endif
 #endif
 
@@ -711,6 +713,64 @@ void RetroEngine::Run()
 
     while (running) {
 #if !RETRO_USE_ORIGINAL_CODE
+        if (hardReset) {
+            hardReset = false;
+
+            StopMusic(true);
+            StopAllSfx();
+
+            // Reload settings to ensure settings.ini changes are picked up first
+            InitUserdata();
+
+            // Reset input states
+            memset(&keyPress, 0, sizeof(InputData));
+            memset(&keyDown, 0, sizeof(InputData));
+            for (int i = 0; i < INPUT_BUTTONCOUNT; ++i) {
+                inputDevice[i].press = false;
+                inputDevice[i].hold  = false;
+            }
+            touches = 0;
+
+            // Clear script data to ensure everything re-parses on load
+            ClearScriptData();
+
+            // Clear native objects BEFORE RefreshEngine to avoid re-init of current level objects
+            ClearNativeObjects();
+            nativeEntityCountBackup  = 0;
+            nativeEntityCountBackupS = 0;
+
+#if RETRO_USE_MOD_LOADER
+            // RefreshEngine reloads GameConfig, SFX, GFX, etc. and re-scans mods
+            RefreshEngine();
+#endif
+
+            // Reset engine states
+            gameSpeed    = 1;
+            masterPaused = false;
+            frameStep    = false;
+            hasFocus     = true;
+            focusState   = 0;
+
+            // Reset stage state
+            activeStageList   = 0;
+            stageListPosition = 0;
+            ResetCurrentStageFolder();
+            stageMode = STAGEMODE_LOAD;
+
+            // Set game mode based on skipStartMenu (matches Engine::Init logic)
+            if (skipStartMenu)
+                gameMode = ENGINE_MAINGAME;
+            else
+                gameMode = ENGINE_WAIT;
+
+            // Re-init the native object system to create SegaSplash or RetroGameLoop
+            InitNativeObjectSystem();
+
+            // Force physical controls for PS3 and disable blocking fades
+            usePhysicalControls = true;
+            nativeMenuFadeIn    = false;
+        }
+
         if (!vsync) {
 #if RETRO_USING_SDL1 || RETRO_USING_SDL2
             curTicks = SDL_GetPerformanceCounter();
@@ -743,6 +803,12 @@ void RetroEngine::Run()
 #if !RETRO_USE_ORIGINAL_CODE
             for (int s = 0; s < gameSpeed; ++s) {
                 ProcessInput();
+
+#if RETRO_USE_MOD_LOADER
+                if (Engine.modloaderPS3 && inputDevice[INPUT_SELECT].press) {
+                    OpenModMenu();
+                }
+#endif
 #endif
 
 #if !RETRO_USE_ORIGINAL_CODE

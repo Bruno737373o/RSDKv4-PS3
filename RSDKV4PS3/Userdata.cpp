@@ -267,6 +267,9 @@ void InitUserdata()
         ini.SetInteger("Game", "GameType", Engine.gameTypeID = 0);
         ini.SetBool("Game", "SkipStartMenu", skipStartMenu = false);
         skipStartMenu_Config = skipStartMenu;
+#if RETRO_USE_MOD_LOADER
+        ini.SetBool("Game", "ModloaderPS3", Engine.modloaderPS3 = false);
+#endif
         ini.SetInteger("Game", "DisableFocusPause", disableFocusPause = 0);
         disableFocusPause_Config = disableFocusPause;
 
@@ -422,6 +425,10 @@ void InitUserdata()
         if (!ini.GetBool("Game", "SkipStartMenu", &skipStartMenu))
             skipStartMenu = false;
         skipStartMenu_Config = skipStartMenu;
+#if RETRO_USE_MOD_LOADER
+        if (!ini.GetBool("Game", "ModloaderPS3", &Engine.modloaderPS3))
+            Engine.modloaderPS3 = false;
+#endif
         if (!ini.GetInteger("Game", "DisableFocusPause", &disableFocusPause))
             disableFocusPause = false;
         disableFocusPause_Config = disableFocusPause;
@@ -715,6 +722,10 @@ void WriteSettings()
     ini.SetInteger("Game", "GameType", Engine.gameTypeID);
     ini.SetComment("Game", "SSMenuComment", "If set to true, disables the start menu");
     ini.SetBool("Game", "SkipStartMenu", skipStartMenu_Config);
+#if RETRO_USE_MOD_LOADER
+    ini.SetComment("Game", "ModloaderPS3Comment", "If set to true, enables the ModLoader menu via the SELECT button");
+    ini.SetBool("Game", "ModloaderPS3", Engine.modloaderPS3);
+#endif
     ini.SetComment("Game", "DFPMenuComment",
                    "Handles pausing behaviour when focus is lost\n; 0 = Game focus enabled, engine focus enabled\n; 1 = Game focus disabled, "
                    "engine focus enabled\n; 2 = Game focus enabled, engine focus disabled\n; 3 = Game focus disabled, engine focus disabled");

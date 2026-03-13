@@ -124,6 +124,7 @@
     <ClInclude Include="Input.hpp" />
     <ClInclude Include="Math.hpp" />
     <ClInclude Include="ModAPI.hpp" />
+    <ClInclude Include="NativeObjects\NativeObjects.hpp" />
     <ClInclude Include="Networking.hpp" />
     <ClInclude Include="Object.hpp" />
     <ClInclude Include="Palette.hpp" />

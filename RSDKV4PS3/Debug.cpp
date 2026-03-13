@@ -555,17 +555,9 @@ void ProcessStageSelect()
                 gameMenu[1].visibleRowOffset = visibleOffset;
             }
             else if (keyPress.B) {
-                RefreshEngine();
-
                 if (Engine.modMenuCalled) {
-                    stageMode            = STAGEMODE_LOAD;
-                    Engine.gameMode      = ENGINE_MAINGAME;
                     Engine.modMenuCalled = false;
-
-                    if (stageListPosition >= stageListCount[activeStageList]) {
-                        activeStageList   = 0;
-                        stageListPosition = 0;
-                    }
+                    Engine.hardReset     = true;
                 }
                 else {
                     SetTextMenu(DEVMENU_MAIN);

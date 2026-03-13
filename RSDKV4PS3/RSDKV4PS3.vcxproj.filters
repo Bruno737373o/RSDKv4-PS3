@@ -181,5 +181,8 @@
     <ClInclude Include="UPnP.hpp">
       <Filter>Source Files</Filter>
     </ClInclude>
+    <ClInclude Include="NativeObjects\NativeObjects.hpp">
+      <Filter>Source Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>
