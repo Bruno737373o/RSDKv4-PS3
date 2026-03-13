@@ -454,16 +454,26 @@ void RetroEngine::Init()
     // Check if Scripts folder exists in the same directory as Data.rsdk
     char scriptsPath[0x100];
 #if RETRO_PLATFORM == RETRO_PS3
-    sprintf(scriptsPath, "%sScripts", BASE_PATH);
+    // Check gamePath (Game Data Utility) first
+    sprintf(scriptsPath, "%sScripts", gamePath);
     DIR *scriptsDir = opendir(scriptsPath);
     if (!scriptsDir) {
-        sprintf(scriptsPath, "%sscripts", BASE_PATH);
+        sprintf(scriptsPath, "%sscripts", gamePath);
         scriptsDir = opendir(scriptsPath);
+    }
+    // Then check BASE_PATH
+    if (!scriptsDir) {
+        sprintf(scriptsPath, "%sScripts", BASE_PATH);
+        scriptsDir = opendir(scriptsPath);
+        if (!scriptsDir) {
+            sprintf(scriptsPath, "%sscripts", BASE_PATH);
+            scriptsDir = opendir(scriptsPath);
+        }
     }
     if (scriptsDir) {
         forceUseScripts = true;
         closedir(scriptsDir);
-        PrintLog("External Scripts folder detected, forcing TxtScripts mode.");
+        PrintLog("External Scripts folder detected at %s, forcing TxtScripts mode.", scriptsPath);
     }
 #endif
 #if RETRO_USE_NETWORKING
@@ -488,12 +498,20 @@ void RetroEngine::Init()
     StrCopy(dest, gamePath);
     StrAdd(dest, Engine.dataFile[0]);
     disableFocusPause = 0; // focus pause is ALWAYS enabled.
+    CheckRSDKFile(dest);
+#elif RETRO_PLATFORM == RETRO_PS3
+    StrCopy(dest, gamePath);
+    StrAdd(dest, Engine.dataFile[0]);
+    if (!CheckRSDKFile(dest)) {
+        StrCopy(dest, BASE_PATH);
+        StrAdd(dest, Engine.dataFile[0]);
+        CheckRSDKFile(dest);
+    }
 #else
-
     StrCopy(dest, BASE_PATH);
     StrAdd(dest, Engine.dataFile[0]);
-#endif
     CheckRSDKFile(dest);
+#endif
 #else
     CheckRSDKFile("Data.rsdk");
 #endif
@@ -501,9 +519,19 @@ void RetroEngine::Init()
 #if !RETRO_USE_ORIGINAL_CODE
     for (int i = 1; i < RETRO_PACK_COUNT; ++i) {
         if (!StrComp(Engine.dataFile[i], "")) {
+#if RETRO_PLATFORM == RETRO_PS3
+            StrCopy(dest, gamePath);
+            StrAdd(dest, Engine.dataFile[i]);
+            if (!CheckRSDKFile(dest)) {
+                StrCopy(dest, BASE_PATH);
+                StrAdd(dest, Engine.dataFile[i]);
+                CheckRSDKFile(dest);
+            }
+#else
             StrCopy(dest, BASE_PATH);
             StrAdd(dest, Engine.dataFile[i]);
             CheckRSDKFile(dest);
+#endif
         }
     }
 #endif
