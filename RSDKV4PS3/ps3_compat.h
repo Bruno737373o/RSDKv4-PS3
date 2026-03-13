@@ -26,6 +26,7 @@
 #include <cell/resc.h>
 #include <cell/gcm.h>
 #include <sysutil/sysutil_common.h>
+#include <sysutil/sysutil_gamecontent.h>
 #include <sys/socket.h>
 #include <netex/net.h>
 #include <netex/errno.h>

@@ -353,6 +353,9 @@ void RetroEngine::Init()
 {
 #if RETRO_PLATFORM == RETRO_PS3
     cellSysutilRegisterCallback(0, PS3SysutilCallback, NULL);
+    cellSysmoduleLoadModule(CELL_SYSMODULE_FS);
+    cellSysmoduleLoadModule(CELL_SYSMODULE_SYSUTIL);
+    cellSysmoduleLoadModule(CELL_SYSMODULE_SYSUTIL_GAME);
 #endif
     initialised      = false;
     running          = false;

@@ -191,6 +191,72 @@ void InitUserdata()
     sprintf(gamePath, "%s", BASE_PATH);
 #if RETRO_USE_MOD_LOADER
     sprintf(modsPath, "%s", BASE_PATH);
+#if RETRO_PLATFORM == RETRO_PS3
+    CellGameSetInitParams init;
+    memset(&init, 0, sizeof(CellGameSetInitParams));
+    strncpy(init.title, "RSDKV4 Mods", CELL_GAME_SYSP_TITLE_SIZE);
+    strncpy(init.titleId, "RSDKV4MOD", CELL_GAME_SYSP_TITLEID_SIZE);
+    strncpy(init.version, "01.00", CELL_GAME_SYSP_VERSION_SIZE);
+
+    char contentInfoPath[128];
+    char usrdirPath[128];
+    CellGameContentSize size;
+    
+    // Check if game data already exists
+    int ret = cellGameDataCheck(CELL_GAME_GAMETYPE_GAMEDATA, "RSDKV4MOD", &size);
+    bool shouldPermit = (ret == 0);
+
+    if (ret != 0) {
+        PrintLog("cellGameDataCheck returned 0x%08X, attempting to create...", ret);
+        cellSysutilCheckCallback();
+        // Create if it doesn't exist or is broken
+        ret = cellGameCreateGameData(&init, contentInfoPath, usrdirPath);
+        if (ret == 0) {
+            PrintLog("cellGameCreateGameData success: info=%s, usr=%s", contentInfoPath, usrdirPath);
+            // Copy ICON0.PNG to contentInfoPath
+            char srcIcon[256], dstIcon[256];
+            sprintf(srcIcon, "%sICON0.PNG", BASE_PATH);
+            sprintf(dstIcon, "%s/ICON0.PNG", contentInfoPath);
+            
+            FILE *fsrc = fopen(srcIcon, "rb");
+            if (fsrc) {
+                FILE *fdst = fopen(dstIcon, "wb");
+                if (fdst) {
+                    char buffer[4096];
+                    size_t bytes;
+                    while ((bytes = fread(buffer, 1, sizeof(buffer), fsrc)) > 0) {
+                        fwrite(buffer, 1, bytes, fdst);
+                    }
+                    fclose(fdst);
+                    PrintLog("Copied ICON0.PNG to Game Data area");
+                }
+                fclose(fsrc);
+            }
+            shouldPermit = true;
+        }
+        else {
+            PrintLog("cellGameCreateGameData failed: 0x%08X", ret);
+        }
+    }
+    else {
+        PrintLog("cellGameDataCheck found existing data");
+    }
+    
+    if (shouldPermit) {
+        cellSysutilCheckCallback();
+        // If it exists or was just created, get permissions
+        ret = cellGameContentPermit(contentInfoPath, usrdirPath);
+        if (ret == 0) {
+            strncpy(modsPath, usrdirPath, sizeof(modsPath));
+            modsPath[sizeof(modsPath) - 1] = '\0';
+            strcat(modsPath, "/");
+            PrintLog("PS3 Game Data permitted at: %s", modsPath);
+        }
+        else {
+            PrintLog("cellGameContentPermit failed with 0x%08X, falling back to BASE_PATH", ret);
+        }
+    }
+#endif
 #endif
 
 #if RETRO_PLATFORM == RETRO_OSX

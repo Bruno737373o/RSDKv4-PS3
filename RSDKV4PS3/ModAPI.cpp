@@ -95,7 +95,17 @@ void InitMods()
 
     char modBuf[0x400];
 #if RETRO_PLATFORM == RETRO_PS3
-    snprintf(modBuf, sizeof(modBuf), "%smods", modsPath);
+    StrCopy(modBuf, modsPath);
+    if (StrComp(modsPath, BASE_PATH)) {
+        if (modBuf[StrLength(modBuf) - 1] != '/')
+            StrAdd(modBuf, "/");
+        StrAdd(modBuf, "mods");
+    }
+    else {
+        // Area de datos de juego, quitar barra final para evitar //
+        if (modBuf[StrLength(modBuf) - 1] == '/')
+            modBuf[StrLength(modBuf) - 1] = '\0';
+    }
 #else
     sprintf(modBuf, "%smods", modsPath);
 #endif
@@ -304,7 +314,14 @@ bool LoadMod(ModInfo *info, std::string modsPath, std::string folder, bool activ
         modSettings.GetBool("", "RedirectSaveRAM", &info->redirectSave);
         if (info->redirectSave) {
             char path[0x100];
+#if RETRO_PLATFORM == RETRO_PS3
+            if (StrComp(modsPath.c_str(), BASE_PATH))
+                sprintf(path, "mods/%s/", folder.c_str());
+            else
+                sprintf(path, "%s/", folder.c_str());
+#else
             sprintf(path, "mods/%s/", folder.c_str());
+#endif
             info->savePath = path;
         }
 
@@ -448,10 +465,17 @@ bool InstallMod(ModInfo *info)
     PrintLog("Installing mod: %s", info->name.c_str());
 
     char srcPath[0x400];
-    snprintf(srcPath, sizeof(srcPath), "/dev_usb000/%s", info->folder.c_str());
+    snprintf(srcPath, sizeof(srcPath), "/dev_hdd0/packages/%s", info->folder.c_str());
 
     char modsDir[0x400];
+#if RETRO_PLATFORM == RETRO_PS3
+    if (StrComp(modsPath, BASE_PATH))
+        snprintf(modsDir, sizeof(modsDir), "%smods", modsPath);
+    else
+        snprintf(modsDir, sizeof(modsDir), "%s", modsPath);
+#else
     snprintf(modsDir, sizeof(modsDir), "%smods", modsPath);
+#endif
     mkdir(modsDir, 0777);
 
     char dstPath[0x400];
@@ -468,7 +492,7 @@ void InitModInstallList()
 {
     modInstallList.clear();
 
-    const char *packagesPath = "/dev_usb000";
+    const char *packagesPath = "/dev_hdd0/packages";
     DIR *dir                 = opendir(packagesPath);
     if (dir) {
         struct dirent *entry;
@@ -498,7 +522,16 @@ void ScanModFolder(ModInfo *info)
 
     char modBuf[0x400];
 #if RETRO_PLATFORM == RETRO_PS3
-    snprintf(modBuf, sizeof(modBuf), "%smods", modsPath);
+    StrCopy(modBuf, modsPath);
+    if (StrComp(modsPath, BASE_PATH)) {
+        if (modBuf[StrLength(modBuf) - 1] != '/')
+            StrAdd(modBuf, "/");
+        StrAdd(modBuf, "mods");
+    }
+    else {
+        if (modBuf[StrLength(modBuf) - 1] == '/')
+            modBuf[StrLength(modBuf) - 1] = '\0';
+    }
 #else
     sprintf(modBuf, "%smods", modsPath);
 #endif
@@ -625,7 +658,16 @@ void SaveMods()
 {
     char modBuf[0x400];
 #if RETRO_PLATFORM == RETRO_PS3
-    snprintf(modBuf, sizeof(modBuf), "%smods", modsPath);
+    StrCopy(modBuf, modsPath);
+    if (StrComp(modsPath, BASE_PATH)) {
+        if (modBuf[StrLength(modBuf) - 1] != '/')
+            StrAdd(modBuf, "/");
+        StrAdd(modBuf, "mods");
+    }
+    else {
+        if (modBuf[StrLength(modBuf) - 1] == '/')
+            modBuf[StrLength(modBuf) - 1] = '\0';
+    }
 #else
     sprintf(modBuf, "%smods", modsPath);
 #endif
