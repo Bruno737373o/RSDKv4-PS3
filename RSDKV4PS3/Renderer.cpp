@@ -1036,6 +1036,24 @@ MeshInfo *LoadMesh(const char *filePath, byte textureID)
             mesh->vertexCount = buffer[0] + (buffer[1] << 8);
             mesh->vertices    = (DrawVertex *)malloc(sizeof(DrawVertex) * mesh->vertexCount);
 
+#if RETRO_PLATFORM == RETRO_PS3
+            float *uvData = (float *)malloc(mesh->vertexCount * 2 * sizeof(float));
+            FileRead(uvData, mesh->vertexCount * 2 * sizeof(float));
+            for (int v = 0; v < mesh->vertexCount; ++v) {
+                float u = uvData[v * 2 + 0];
+                float v2 = uvData[v * 2 + 1];
+                SWAP_ENDIAN(u);
+                SWAP_ENDIAN(v2);
+                mesh->vertices[v].texCoordX = u;
+                mesh->vertices[v].texCoordY = v2;
+
+                mesh->vertices[v].r = 0xFF;
+                mesh->vertices[v].g = 0xFF;
+                mesh->vertices[v].b = 0xFF;
+                mesh->vertices[v].a = 0xFF;
+            }
+            free(uvData);
+#else
             for (int v = 0; v < mesh->vertexCount; ++v) {
                 float buf = 0;
                 FileRead(&buf, sizeof(float));
@@ -1051,11 +1069,28 @@ MeshInfo *LoadMesh(const char *filePath, byte textureID)
                 mesh->vertices[v].b = 0xFF;
                 mesh->vertices[v].a = 0xFF;
             }
+#endif
 
             FileRead(buffer, sizeof(ushort));
             mesh->indexCount = buffer[0] + (buffer[1] << 8);
             mesh->indices    = (ushort *)malloc(sizeof(ushort) * (3 * mesh->indexCount));
 
+#if RETRO_PLATFORM == RETRO_PS3
+            ushort *idxData = (ushort *)malloc(mesh->indexCount * 3 * sizeof(ushort));
+            FileRead(idxData, mesh->indexCount * 3 * sizeof(ushort));
+            for (int i = 0; i < mesh->indexCount; ++i) {
+                ushort id1 = idxData[i * 3 + 0];
+                ushort id2 = idxData[i * 3 + 1];
+                ushort id3 = idxData[i * 3 + 2];
+                SWAP_ENDIAN(id1);
+                SWAP_ENDIAN(id2);
+                SWAP_ENDIAN(id3);
+                mesh->indices[i * 3 + 2] = id1;
+                mesh->indices[i * 3 + 1] = id2;
+                mesh->indices[i * 3 + 0] = id3;
+            }
+            free(idxData);
+#else
             int id = 0;
             for (int i = 0; i < mesh->indexCount; ++i) {
                 FileRead(buffer, sizeof(ushort));
@@ -1069,11 +1104,37 @@ MeshInfo *LoadMesh(const char *filePath, byte textureID)
 
                 id += 3;
             }
+#endif
 
             FileRead(buffer, sizeof(ushort));
             mesh->frameCount = buffer[0] + (buffer[1] << 8);
 
             if (mesh->frameCount <= 1) {
+#if RETRO_PLATFORM == RETRO_PS3
+                float *vntData = (float *)malloc(mesh->vertexCount * 6 * sizeof(float));
+                FileRead(vntData, mesh->vertexCount * 6 * sizeof(float));
+                for (int v = 0; v < mesh->vertexCount; ++v) {
+                    float vx = vntData[v * 6 + 0];
+                    float vy = vntData[v * 6 + 1];
+                    float vz = vntData[v * 6 + 2];
+                    float nx = vntData[v * 6 + 3];
+                    float ny = vntData[v * 6 + 4];
+                    float nz = vntData[v * 6 + 5];
+                    SWAP_ENDIAN(vx);
+                    SWAP_ENDIAN(vy);
+                    SWAP_ENDIAN(vz);
+                    SWAP_ENDIAN(nx);
+                    SWAP_ENDIAN(ny);
+                    SWAP_ENDIAN(nz);
+                    mesh->vertices[v].vertX = vx;
+                    mesh->vertices[v].vertY = vy;
+                    mesh->vertices[v].vertZ = vz;
+                    mesh->vertices[v].normalX = nx;
+                    mesh->vertices[v].normalY = ny;
+                    mesh->vertices[v].normalZ = nz;
+                }
+                free(vntData);
+#else
                 for (int v = 0; v < mesh->vertexCount; ++v) {
                     float buf = 0;
                     FileRead(&buf, sizeof(float));
@@ -1100,9 +1161,39 @@ MeshInfo *LoadMesh(const char *filePath, byte textureID)
                     SWAP_ENDIAN(buf);
                     mesh->vertices[v].normalZ = buf;
                 }
+#endif
             }
             else {
                 mesh->frames = (MeshVertex *)malloc(mesh->frameCount * mesh->vertexCount * sizeof(MeshVertex));
+#if RETRO_PLATFORM == RETRO_PS3
+                float *vntData = (float *)malloc(mesh->frameCount * mesh->vertexCount * 6 * sizeof(float));
+                FileRead(vntData, mesh->frameCount * mesh->vertexCount * 6 * sizeof(float));
+                for (int f = 0; f < mesh->frameCount; ++f) {
+                    int frameOff = (f * mesh->vertexCount);
+                    for (int v = 0; v < mesh->vertexCount; ++v) {
+                        int vOff = (frameOff + v) * 6;
+                        float vx = vntData[vOff + 0];
+                        float vy = vntData[vOff + 1];
+                        float vz = vntData[vOff + 2];
+                        float nx = vntData[vOff + 3];
+                        float ny = vntData[vOff + 4];
+                        float nz = vntData[vOff + 5];
+                        SWAP_ENDIAN(vx);
+                        SWAP_ENDIAN(vy);
+                        SWAP_ENDIAN(vz);
+                        SWAP_ENDIAN(nx);
+                        SWAP_ENDIAN(ny);
+                        SWAP_ENDIAN(nz);
+                        mesh->frames[frameOff + v].vertX = vx;
+                        mesh->frames[frameOff + v].vertY = vy;
+                        mesh->frames[frameOff + v].vertZ = vz;
+                        mesh->frames[frameOff + v].normalX = nx;
+                        mesh->frames[frameOff + v].normalY = ny;
+                        mesh->frames[frameOff + v].normalZ = nz;
+                    }
+                }
+                free(vntData);
+#else
                 for (int f = 0; f < mesh->frameCount; ++f) {
                     int frameOff = (f * mesh->vertexCount);
                     for (int v = 0; v < mesh->vertexCount; ++v) {
@@ -1132,6 +1223,7 @@ MeshInfo *LoadMesh(const char *filePath, byte textureID)
                         mesh->frames[frameOff + v].normalZ = buf;
                     }
                 }
+#endif
             }
             CloseFile();
 
