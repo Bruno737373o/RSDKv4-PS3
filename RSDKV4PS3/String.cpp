@@ -244,6 +244,12 @@ void InitLocalizedStrings()
     memset(stringStorage, 0, STRING_SIZE * STRSTORAGE_SIZE * sizeof(ushort));
     stringStorePos = 0;
 
+    FileInfo info;
+    FileInfo *infoPtr = NULL;
+    if (LoadFile("Data/Game/StringList.txt", &info)) {
+        infoPtr = &info;
+    }
+
     char langStr[0x4];
     switch (Engine.language) {
         case RETRO_EN: StrCopy(langStr, "en"); break;
@@ -259,52 +265,52 @@ void InitLocalizedStrings()
         case RETRO_ZS: StrCopy(langStr, "zs"); break;
         default: break;
     }
-    strPressStart     = ReadLocalizedString("PressStart", langStr, "Data/Game/StringList.txt");
-    strTouchToStart   = ReadLocalizedString("TouchToStart", langStr, "Data/Game/StringList.txt");
-    strStartGame      = ReadLocalizedString("StartGame", langStr, "Data/Game/StringList.txt");
-    strTimeAttack     = ReadLocalizedString("TimeAttack", langStr, "Data/Game/StringList.txt");
-    strAchievements   = ReadLocalizedString("Achievements", langStr, "Data/Game/StringList.txt");
-    strLeaderboards   = ReadLocalizedString("Leaderboards", langStr, "Data/Game/StringList.txt");
-    strHelpAndOptions = ReadLocalizedString("HelpAndOptions", langStr, "Data/Game/StringList.txt");
+    strPressStart     = ReadLocalizedString("PressStart", langStr, "Data/Game/StringList.txt", infoPtr);
+    strTouchToStart   = ReadLocalizedString("TouchToStart", langStr, "Data/Game/StringList.txt", infoPtr);
+    strStartGame      = ReadLocalizedString("StartGame", langStr, "Data/Game/StringList.txt", infoPtr);
+    strTimeAttack     = ReadLocalizedString("TimeAttack", langStr, "Data/Game/StringList.txt", infoPtr);
+    strAchievements   = ReadLocalizedString("Achievements", langStr, "Data/Game/StringList.txt", infoPtr);
+    strLeaderboards   = ReadLocalizedString("Leaderboards", langStr, "Data/Game/StringList.txt", infoPtr);
+    strHelpAndOptions = ReadLocalizedString("HelpAndOptions", langStr, "Data/Game/StringList.txt", infoPtr);
 
     // SoundTest & StageTest, both unused
-    strSoundTest = ReadLocalizedString("SoundTest", langStr, "Data/Game/StringList.txt");
-    // strStageTest      = ReadLocalizedString("StageTest", langStr, "Data/Game/StringList.txt");
+    strSoundTest = ReadLocalizedString("SoundTest", langStr, "Data/Game/StringList.txt", infoPtr);
+    // strStageTest      = ReadLocalizedString("StageTest", langStr, "Data/Game/StringList.txt", infoPtr);
 
-    str2PlayerVS      = ReadLocalizedString("TwoPlayerVS", langStr, "Data/Game/StringList.txt");
-    strSaveSelect     = ReadLocalizedString("SaveSelect", langStr, "Data/Game/StringList.txt");
-    strPlayerSelect   = ReadLocalizedString("PlayerSelect", langStr, "Data/Game/StringList.txt");
-    strNoSave         = ReadLocalizedString("NoSave", langStr, "Data/Game/StringList.txt");
-    strNewGame        = ReadLocalizedString("NewGame", langStr, "Data/Game/StringList.txt");
-    strDelete         = ReadLocalizedString("Delete", langStr, "Data/Game/StringList.txt");
-    strDeleteMessage  = ReadLocalizedString("DeleteSavedGame", langStr, "Data/Game/StringList.txt");
-    strYes            = ReadLocalizedString("Yes", langStr, "Data/Game/StringList.txt");
-    strNo             = ReadLocalizedString("No", langStr, "Data/Game/StringList.txt");
-    strSonic          = ReadLocalizedString("Sonic", langStr, "Data/Game/StringList.txt");
-    strTails          = ReadLocalizedString("Tails", langStr, "Data/Game/StringList.txt");
-    strKnuckles       = ReadLocalizedString("Knuckles", langStr, "Data/Game/StringList.txt");
-    strPause          = ReadLocalizedString("Pause", langStr, "Data/Game/StringList.txt");
-    strContinue       = ReadLocalizedString("Continue", langStr, "Data/Game/StringList.txt");
-    strRestart        = ReadLocalizedString("Restart", langStr, "Data/Game/StringList.txt");
-    strExit           = ReadLocalizedString("Exit", langStr, "Data/Game/StringList.txt");
-    strDevMenu        = ReadLocalizedString("DevMenu", "en", "Data/Game/StringList.txt");
-    strRestartMessage = ReadLocalizedString("RestartMessage", langStr, "Data/Game/StringList.txt");
-    strExitMessage    = ReadLocalizedString("ExitMessage", langStr, "Data/Game/StringList.txt");
+    str2PlayerVS      = ReadLocalizedString("TwoPlayerVS", langStr, "Data/Game/StringList.txt", infoPtr);
+    strSaveSelect     = ReadLocalizedString("SaveSelect", langStr, "Data/Game/StringList.txt", infoPtr);
+    strPlayerSelect   = ReadLocalizedString("PlayerSelect", langStr, "Data/Game/StringList.txt", infoPtr);
+    strNoSave         = ReadLocalizedString("NoSave", langStr, "Data/Game/StringList.txt", infoPtr);
+    strNewGame        = ReadLocalizedString("NewGame", langStr, "Data/Game/StringList.txt", infoPtr);
+    strDelete         = ReadLocalizedString("Delete", langStr, "Data/Game/StringList.txt", infoPtr);
+    strDeleteMessage  = ReadLocalizedString("DeleteSavedGame", langStr, "Data/Game/StringList.txt", infoPtr);
+    strYes            = ReadLocalizedString("Yes", langStr, "Data/Game/StringList.txt", infoPtr);
+    strNo             = ReadLocalizedString("No", langStr, "Data/Game/StringList.txt", infoPtr);
+    strSonic          = ReadLocalizedString("Sonic", langStr, "Data/Game/StringList.txt", infoPtr);
+    strTails          = ReadLocalizedString("Tails", langStr, "Data/Game/StringList.txt", infoPtr);
+    strKnuckles       = ReadLocalizedString("Knuckles", langStr, "Data/Game/StringList.txt", infoPtr);
+    strPause          = ReadLocalizedString("Pause", langStr, "Data/Game/StringList.txt", infoPtr);
+    strContinue       = ReadLocalizedString("Continue", langStr, "Data/Game/StringList.txt", infoPtr);
+    strRestart        = ReadLocalizedString("Restart", langStr, "Data/Game/StringList.txt", infoPtr);
+    strExit           = ReadLocalizedString("Exit", langStr, "Data/Game/StringList.txt", infoPtr);
+    strDevMenu        = ReadLocalizedString("DevMenu", "en", "Data/Game/StringList.txt", infoPtr);
+    strRestartMessage = ReadLocalizedString("RestartMessage", langStr, "Data/Game/StringList.txt", infoPtr);
+    strExitMessage    = ReadLocalizedString("ExitMessage", langStr, "Data/Game/StringList.txt", infoPtr);
     if (Engine.language == RETRO_JP) {
-        strNSRestartMessage = ReadLocalizedString("NSRestartMessage", "ja", "Data/Game/StringList.txt");
-        strNSExitMessage    = ReadLocalizedString("NSExitMessage", "ja", "Data/Game/StringList.txt");
+        strNSRestartMessage = ReadLocalizedString("NSRestartMessage", "ja", "Data/Game/StringList.txt", infoPtr);
+        strNSExitMessage    = ReadLocalizedString("NSExitMessage", "ja", "Data/Game/StringList.txt", infoPtr);
     }
     else {
-        strNSRestartMessage = ReadLocalizedString("RestartMessage", langStr, "Data/Game/StringList.txt");
-        strNSExitMessage    = ReadLocalizedString("ExitMessage", langStr, "Data/Game/StringList.txt");
+        strNSRestartMessage = ReadLocalizedString("RestartMessage", langStr, "Data/Game/StringList.txt", infoPtr);
+        strNSExitMessage    = ReadLocalizedString("ExitMessage", langStr, "Data/Game/StringList.txt", infoPtr);
     }
-    strExitGame       = ReadLocalizedString("ExitGame", langStr, "Data/Game/StringList.txt");
-    strNetworkMessage = ReadLocalizedString("NetworkMessage", langStr, "Data/Game/StringList.txt");
+    strExitGame       = ReadLocalizedString("ExitGame", langStr, "Data/Game/StringList.txt", infoPtr);
+    strNetworkMessage = ReadLocalizedString("NetworkMessage", langStr, "Data/Game/StringList.txt", infoPtr);
     for (int i = 0; i < 16; ++i) {
         char buffer[0x10];
         sprintf(buffer, "StageName%d", i + 1);
 
-        strStageList[i] = ReadLocalizedString(buffer, "en", "Data/Game/StringList.txt");
+        strStageList[i] = ReadLocalizedString(buffer, "en", "Data/Game/StringList.txt", infoPtr);
     }
 
     stageStrCount = 0;
@@ -312,59 +318,67 @@ void InitLocalizedStrings()
         char buffer[0x20];
         sprintf(buffer, "SaveStageName%d", i + 1);
 
-        strSaveStageList[i] = ReadLocalizedString(buffer, "en", "Data/Game/StringList.txt");
+        strSaveStageList[i] = ReadLocalizedString(buffer, "en", "Data/Game/StringList.txt", infoPtr);
         if (!strSaveStageList[i])
             break;
         stageStrCount++;
     }
-    strNewBestTime   = ReadLocalizedString("NewBestTime", langStr, "Data/Game/StringList.txt");
-    strRecords       = ReadLocalizedString("Records", langStr, "Data/Game/StringList.txt");
-    strNextAct       = ReadLocalizedString("NextAct", langStr, "Data/Game/StringList.txt");
-    strPlay          = ReadLocalizedString("Play", langStr, "Data/Game/StringList.txt");
-    strTotalTime     = ReadLocalizedString("TotalTime", langStr, "Data/Game/StringList.txt");
-    strInstructions  = ReadLocalizedString("Instructions", langStr, "Data/Game/StringList.txt");
-    strSettings      = ReadLocalizedString("Settings", langStr, "Data/Game/StringList.txt");
-    strStaffCredits  = ReadLocalizedString("StaffCredits", langStr, "Data/Game/StringList.txt");
-    strAbout         = ReadLocalizedString("About", langStr, "Data/Game/StringList.txt");
-    strMusic         = ReadLocalizedString("Music", langStr, "Data/Game/StringList.txt");
-    strSoundFX       = ReadLocalizedString("SoundFX", langStr, "Data/Game/StringList.txt");
-    strSpindash      = ReadLocalizedString("SpinDash", langStr, "Data/Game/StringList.txt");
-    strBoxArt        = ReadLocalizedString("BoxArt", langStr, "Data/Game/StringList.txt");
-    strControls      = ReadLocalizedString("Controls", langStr, "Data/Game/StringList.txt");
-    strOn            = ReadLocalizedString("On", langStr, "Data/Game/StringList.txt");
-    strOff           = ReadLocalizedString("Off", langStr, "Data/Game/StringList.txt");
-    strCustomizeDPad = ReadLocalizedString("CustomizeDPad", langStr, "Data/Game/StringList.txt");
-    strDPadSize      = ReadLocalizedString("DPadSize", langStr, "Data/Game/StringList.txt");
-    strDPadOpacity   = ReadLocalizedString("DPadOpacity", langStr, "Data/Game/StringList.txt");
-    strHelpText1     = ReadLocalizedString("HelpText1", langStr, "Data/Game/StringList.txt");
-    strHelpText2     = ReadLocalizedString("HelpText2", langStr, "Data/Game/StringList.txt");
-    strHelpText3     = ReadLocalizedString("HelpText3", langStr, "Data/Game/StringList.txt");
-    strHelpText4     = ReadLocalizedString("HelpText4", langStr, "Data/Game/StringList.txt");
-    strHelpText5     = ReadLocalizedString("HelpText5", langStr, "Data/Game/StringList.txt");
-    strVersionName   = ReadLocalizedString("Version", langStr, "Data/Game/StringList.txt");
-    strPrivacy       = ReadLocalizedString("Privacy", langStr, "Data/Game/StringList.txt");
-    strTerms         = ReadLocalizedString("Terms", langStr, "Data/Game/StringList.txt");
-    // strMoreGames         = ReadLocalizedString("MoreGames", langStr, "Data/Game/StringList.txt");
+    strNewBestTime   = ReadLocalizedString("NewBestTime", langStr, "Data/Game/StringList.txt", infoPtr);
+    strRecords       = ReadLocalizedString("Records", langStr, "Data/Game/StringList.txt", infoPtr);
+    strNextAct       = ReadLocalizedString("NextAct", langStr, "Data/Game/StringList.txt", infoPtr);
+    strPlay          = ReadLocalizedString("Play", langStr, "Data/Game/StringList.txt", infoPtr);
+    strTotalTime     = ReadLocalizedString("TotalTime", langStr, "Data/Game/StringList.txt", infoPtr);
+    strInstructions  = ReadLocalizedString("Instructions", langStr, "Data/Game/StringList.txt", infoPtr);
+    strSettings      = ReadLocalizedString("Settings", langStr, "Data/Game/StringList.txt", infoPtr);
+    strStaffCredits  = ReadLocalizedString("StaffCredits", langStr, "Data/Game/StringList.txt", infoPtr);
+    strAbout         = ReadLocalizedString("About", langStr, "Data/Game/StringList.txt", infoPtr);
+    strMusic         = ReadLocalizedString("Music", langStr, "Data/Game/StringList.txt", infoPtr);
+    strSoundFX       = ReadLocalizedString("SoundFX", langStr, "Data/Game/StringList.txt", infoPtr);
+    strSpindash      = ReadLocalizedString("SpinDash", langStr, "Data/Game/StringList.txt", infoPtr);
+    strBoxArt        = ReadLocalizedString("BoxArt", langStr, "Data/Game/StringList.txt", infoPtr);
+    strControls      = ReadLocalizedString("Controls", langStr, "Data/Game/StringList.txt", infoPtr);
+    strOn            = ReadLocalizedString("On", langStr, "Data/Game/StringList.txt", infoPtr);
+    strOff           = ReadLocalizedString("Off", langStr, "Data/Game/StringList.txt", infoPtr);
+    strCustomizeDPad = ReadLocalizedString("CustomizeDPad", langStr, "Data/Game/StringList.txt", infoPtr);
+    strDPadSize      = ReadLocalizedString("DPadSize", langStr, "Data/Game/StringList.txt", infoPtr);
+    strDPadOpacity   = ReadLocalizedString("DPadOpacity", langStr, "Data/Game/StringList.txt", infoPtr);
+    strHelpText1     = ReadLocalizedString("HelpText1", langStr, "Data/Game/StringList.txt", infoPtr);
+    strHelpText2     = ReadLocalizedString("HelpText2", langStr, "Data/Game/StringList.txt", infoPtr);
+    strHelpText3     = ReadLocalizedString("HelpText3", langStr, "Data/Game/StringList.txt", infoPtr);
+    strHelpText4     = ReadLocalizedString("HelpText4", langStr, "Data/Game/StringList.txt", infoPtr);
+    strHelpText5     = ReadLocalizedString("HelpText5", langStr, "Data/Game/StringList.txt", infoPtr);
+    strVersionName   = ReadLocalizedString("Version", langStr, "Data/Game/StringList.txt", infoPtr);
+    strPrivacy       = ReadLocalizedString("Privacy", langStr, "Data/Game/StringList.txt", infoPtr);
+    strTerms         = ReadLocalizedString("Terms", langStr, "Data/Game/StringList.txt", infoPtr);
+    // strMoreGames         = ReadLocalizedString("MoreGames", langStr, "Data/Game/StringList.txt", infoPtr);
 
     // Video Filter options
-    // strVideoFilter       = ReadLocalizedString("VideoFilter", langStr, "Data/Game/StringList.txt");
-    // strSharp             = ReadLocalizedString("Sharp", langStr, "Data/Game/StringList.txt");
-    // strSmooth            = ReadLocalizedString("Smooth", langStr, "Data/Game/StringList.txt");
-    // strNostalgic         = ReadLocalizedString("Nostalgic", langStr, "Data/Game/StringList.txt");
+    // strVideoFilter       = ReadLocalizedString("VideoFilter", langStr, "Data/Game/StringList.txt", infoPtr);
+    // strSharp             = ReadLocalizedString("Sharp", langStr, "Data/Game/StringList.txt", infoPtr);
+    // strSmooth            = ReadLocalizedString("Smooth", langStr, "Data/Game/StringList.txt", infoPtr);
+    // strNostalgic         = ReadLocalizedString("Nostalgic", langStr, "Data/Game/StringList.txt", infoPtr);
 
     // Login With Facebook
-    // strFBLogin = ReadLocalizedString("LoginWithFacebook", langStr, "Data/Game/StringList.txt");
+    // strFBLogin = ReadLocalizedString("LoginWithFacebook", langStr, "Data/Game/StringList.txt", infoPtr);
 
     // Unused Control Modes
-    // strControlMethod = ReadLocalizedString("ControlMethod", langStr, "Data/Game/StringList.txt");
-    // strSwipeAndTap   = ReadLocalizedString("SwipeAndTap", langStr, "Data/Game/StringList.txt");
-    // strVirtualDPad   = ReadLocalizedString("VirtualDPad", langStr, "Data/Game/StringList.txt");
+    // strControlMethod = ReadLocalizedString("ControlMethod", langStr, "Data/Game/StringList.txt", infoPtr);
+    // strSwipeAndTap   = ReadLocalizedString("SwipeAndTap", langStr, "Data/Game/StringList.txt", infoPtr);
+    // strVirtualDPad   = ReadLocalizedString("VirtualDPad", langStr, "Data/Game/StringList.txt", infoPtr);
+
+    if (infoPtr)
+        CloseFile();
 
     ReadCreditsList("Data/Game/CreditsMobile.txt");
 }
-ushort *ReadLocalizedString(const char *stringName, const char *language, const char *filePath)
+ushort *ReadLocalizedString(const char *stringName, const char *language, const char *filePath, FileInfo *info)
 {
-    FileInfo info;
+    FileInfo localInfo;
+    FileInfo *fileInfo = info;
+    if (!fileInfo) {
+        fileInfo = &localInfo;
+    }
+
     ushort strName[0x40];
     ushort langName[0x8];
     ushort lineBuffer[0x200];
@@ -392,7 +406,17 @@ ushort *ReadLocalizedString(const char *stringName, const char *language, const 
     langName[langNamePos++] = ':';
     langName[langNamePos]   = 0;
 
-    if (LoadFile(filePath, &info)) {
+    bool fileOpened = false;
+    if (info) {
+        SetFileInfo(info);
+        SetFilePosition(0);
+        fileOpened = true;
+    }
+    else if (LoadFile(filePath, fileInfo)) {
+        fileOpened = true;
+    }
+
+    if (fileOpened) {
         int readMode   = 0;
         ushort curChar = 0;
         int charID     = 0;
@@ -413,7 +437,8 @@ ushort *ReadLocalizedString(const char *stringName, const char *language, const 
                     curChar = fileBuffer[0] + (fileBuffer[1] << 8);
                     if (curChar > '\n' && curChar != '\r') {
                         stringStorage[stringStorePos + charID++] = 0;
-                        CloseFile();
+                        if (!info)
+                            CloseFile();
 
                         int pos = stringStorePos;
                         stringStorePos += charID;
@@ -443,7 +468,8 @@ ushort *ReadLocalizedString(const char *stringName, const char *language, const 
                     break;
             }
         }
-        CloseFile();
+        if (!info)
+            CloseFile();
     }
 
     PrintLog("Failed to load string... (%s, %s)", language, stringName);

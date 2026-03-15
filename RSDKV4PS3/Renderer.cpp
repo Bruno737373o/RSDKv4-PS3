@@ -1,5 +1,9 @@
 #include "RetroEngine.hpp"
 
+#define STBI_ONLY_PNG
+#define STBI_NO_LINEAR
+#define STBI_NO_HDR
+#define STBI_NO_STDIO
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
@@ -573,13 +577,35 @@ void RenderScene()
 #endif
 }
 
-int stb_read_cb(void *user, char *data, int size)
+#if RETRO_PLATFORM == RETRO_PS3
+static inline int GetNextPOT(int n)
 {
-    FileRead(data, size);
-    return size;
+    int pot = 1;
+    while (pot < n) pot <<= 1;
+    return pot;
 }
-void stb_skip_cb(void *user, int n) { FileSkip(n); }
-int stb_eof_cb(void *user) { return ReachedEndOfFile(); }
+#endif
+
+stbi_uc *LoadImageFile(const char *filePath, int *width, int *height, int *channels)
+{
+    FileInfo info;
+    if (LoadFile(filePath, &info)) {
+        stbi_uc *data = NULL;
+        stbi_uc *fileBuffer = (stbi_uc *)malloc(info.vfileSize);
+        if (fileBuffer) {
+            FileRead(fileBuffer, info.vfileSize);
+            CloseFile();
+
+            data = stbi_load_from_memory(fileBuffer, info.vfileSize, width, height, channels, 4);
+            free(fileBuffer);
+
+            return data;
+        }
+        CloseFile();
+        return data;
+    }
+    return NULL;
+}
 
 // Textures
 int LoadTexture(const char *filePath, int format)
@@ -595,19 +621,12 @@ int LoadTexture(const char *filePath, int format)
     if (texID == TEXTURE_COUNT)
         return 0;
 
-    FileInfo info;
-    if (LoadFile(filePath, &info)) {
+    int width     = 0;
+    int height    = 0;
+    int channels  = 0;
+    stbi_uc *data = LoadImageFile(filePath, &width, &height, &channels);
 
-        stbi_io_callbacks callbacks;
-        callbacks.read = stb_read_cb;
-        callbacks.skip = stb_skip_cb;
-        callbacks.eof  = stb_eof_cb;
-
-        int width     = 0;
-        int height    = 0;
-        int channels  = 0;
-        stbi_uc *data = stbi_load_from_callbacks(&callbacks, NULL, &width, &height, &channels, 4);
-
+    if (data) {
         if (width > 0 && height > 0) {
             TextureInfo *texture = &textureList[texID];
             texture->width       = width;
@@ -616,210 +635,366 @@ int LoadTexture(const char *filePath, int format)
             StrCopy(texture->fileName, filePath);
 
             float normalize = 0;
-            if (FindStringToken(fileName, "@2", 1) > 0)
+            if (FindStringToken(texture->fileName, "@2", 1) > 0)
                 normalize = 2.0;
-            else if (FindStringToken(fileName, "@1", 1) > 0)
+            else if (FindStringToken(texture->fileName, "@1", 1) > 0)
                 normalize = 0.5;
             else
                 normalize = 1.0;
+
+#if RETRO_PLATFORM == RETRO_PS3
+            int potW = GetNextPOT(width);
+            int potH = GetNextPOT(height);
+            texture->widthN  = normalize / potW;
+            texture->heightN = normalize / potH;
+#else
             texture->widthN  = normalize / width;
             texture->heightN = normalize / height;
+#endif
 
 #if RETRO_USING_OPENGL
             glGenTextures(1, &texture->id);
             glBindTexture(GL_TEXTURE_2D, texture->id);
 #endif
 
-            int id = 0;
             switch (format) {
                 default: break;
                 case TEXFMT_RGBA4444: {
-                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+#if RETRO_PLATFORM == RETRO_PS3
+                    ushort *pixels = (ushort *)memalign(128, potW * potH * sizeof(ushort));
+                    if (pixels) {
+                        memset(pixels, 0, potW * potH * sizeof(ushort));
 
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
-                            int r = data[id++];
-                            int g = data[id++];
-                            int b = data[id++];
-                            int a = data[id++];
-
-                            pixels[x + (y * width)] = ((r >> 4) << 12) | ((g >> 4) << 8) | ((b >> 4) << 4) | (a >> 4);
+                        uint32_t *src = (uint32_t *)data;
+                        for (int y = 0; y < height; ++y) {
+                            ushort *dst = &pixels[y * potW];
+                            for (int x = 0; x < width; ++x) {
+                                uint32_t p = *src++;
+                                int r = (p >> 24) & 0xFF;
+                                int g = (p >> 16) & 0xFF;
+                                int b = (p >> 8) & 0xFF;
+                                int a = (p >> 0) & 0xFF;
+                                *dst++ = ((r >> 4) << 12) | ((g >> 4) << 8) | ((b >> 4) << 4) | (a >> 4);
+                            }
                         }
-                    }
 
 #if RETRO_USING_OPENGL
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, pixels);
-                    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glBindTexture(GL_TEXTURE_2D, 0);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, potW, potH, 0, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, pixels);
 #endif
+                        free(pixels);
+                    }
+#else
+                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+                    if (pixels) {
+                        int id = 0;
+                        for (int y = 0; y < height; ++y) {
+                            for (int x = 0; x < width; ++x) {
+                                int r = data[id++];
+                                int g = data[id++];
+                                int b = data[id++];
+                                int a = data[id++];
 
-                    free(pixels);
+                                pixels[x + (y * width)] = ((r >> 4) << 12) | ((g >> 4) << 8) | ((b >> 4) << 4) | (a >> 4);
+                            }
+                        }
+#if RETRO_USING_OPENGL
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, pixels);
+#endif
+                        free(pixels);
+                    }
+#endif
                     break;
                 }
                 case TEXFMT_RGBA5551: {
-                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+#if RETRO_PLATFORM == RETRO_PS3
+                    ushort *pixels = (ushort *)memalign(128, potW * potH * sizeof(ushort));
+                    if (pixels) {
+                        memset(pixels, 0, potW * potH * sizeof(ushort));
 
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
-                            int r = data[id++];
-                            int g = data[id++];
-                            int b = data[id++];
-                            int a = data[id++];
-
-                            pixels[x + (y * width)] = RGB888_TO_RGB5551(r, g, b) | (a ? 1 : 0);
+                        uint32_t *src = (uint32_t *)data;
+                        for (int y = 0; y < height; ++y) {
+                            ushort *dst = &pixels[y * potW];
+                            for (int x = 0; x < width; ++x) {
+                                uint32_t p = *src++;
+                                int r = (p >> 24) & 0xFF;
+                                int g = (p >> 16) & 0xFF;
+                                int b = (p >> 8) & 0xFF;
+                                int a = (p >> 0) & 0xFF;
+                                *dst++ = RGB888_TO_RGB5551(r, g, b) | (a ? 1 : 0);
+                            }
                         }
-                    }
 
 #if RETRO_USING_OPENGL
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, pixels);
-                    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glBindTexture(GL_TEXTURE_2D, 0);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, potW, potH, 0, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, pixels);
 #endif
+                        free(pixels);
+                    }
+#else
+                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+                    if (pixels) {
+                        int id = 0;
+                        for (int y = 0; y < height; ++y) {
+                            for (int x = 0; x < width; ++x) {
+                                int r = data[id++];
+                                int g = data[id++];
+                                int b = data[id++];
+                                int a = data[id++];
 
-                    free(pixels);
+                                pixels[x + (y * width)] = RGB888_TO_RGB5551(r, g, b) | (a ? 1 : 0);
+                            }
+                        }
+#if RETRO_USING_OPENGL
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, pixels);
+#endif
+                        free(pixels);
+                    }
+#endif
                     break;
                 }
                 case TEXFMT_RGBA8888: {
-                    uint *pixels = (uint *)malloc(width * height * sizeof(uint));
+#if RETRO_PLATFORM == RETRO_PS3
+                    uint *pixels = (uint *)memalign(128, potW * potH * sizeof(uint));
+                    if (pixels) {
+                        memset(pixels, 0, potW * potH * sizeof(uint));
 
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
-                            int r = data[id++];
-                            int g = data[id++];
-                            int b = data[id++];
-                            int a = data[id++];
-
-                            pixels[x + (y * width)] = (r << 24) | (g << 16) | (b << 8) | (a << 0);
+                        uint32_t *src = (uint32_t *)data;
+                        for (int y = 0; y < height; ++y) {
+                            uint *dst = &pixels[y * potW];
+                            for (int x = 0; x < width; ++x) {
+                                uint32_t p = *src++;
+                                int r = (p >> 24) & 0xFF;
+                                int g = (p >> 16) & 0xFF;
+                                int b = (p >> 8) & 0xFF;
+                                int a = (p >> 0) & 0xFF;
+                                *dst++ = (r << 24) | (g << 16) | (b << 8) | (a << 0);
+                            }
                         }
-                    }
 
 #if RETRO_USING_OPENGL
-                    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-                    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-                    glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                    glBindTexture(GL_TEXTURE_2D, 0);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, potW, potH, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 #endif
+                        free(pixels);
+                    }
+#else
+                    uint *pixels = (uint *)malloc(width * height * sizeof(uint));
+                    if (pixels) {
+                        int id = 0;
+                        for (int y = 0; y < height; ++y) {
+                            for (int x = 0; x < width; ++x) {
+                                int r = data[id++];
+                                int g = data[id++];
+                                int b = data[id++];
+                                int a = data[id++];
 
-                    free(pixels);
+                                pixels[x + (y * width)] = (r << 24) | (g << 16) | (b << 8) | (a << 0);
+                            }
+                        }
+#if RETRO_USING_OPENGL
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, texture->width, texture->height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+#endif
+                        free(pixels);
+                    }
+#endif
                     break;
                 }
             }
+
+#if RETRO_USING_OPENGL
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+            glBindTexture(GL_TEXTURE_2D, 0);
+#endif
+
+            stbi_image_free(data);
+            return texID;
         }
 
-        CloseFile();
         stbi_image_free(data);
-
-        return texID;
     }
     return 0;
 }
 void ReplaceTexture(const char *filePath, int texID)
 {
-    FileInfo info;
-    if (LoadFile(filePath, &info)) {
+    int width     = 0;
+    int height    = 0;
+    int channels  = 0;
+    stbi_uc *data = LoadImageFile(filePath, &width, &height, &channels);
 
-        stbi_io_callbacks callbacks;
-        callbacks.read = stb_read_cb;
-        callbacks.skip = stb_skip_cb;
-        callbacks.eof  = stb_eof_cb;
-
-        int width     = 0;
-        int height    = 0;
-        int channels  = 0;
-        stbi_uc *data = stbi_load_from_callbacks(&callbacks, NULL, &width, &height, &channels, 4);
-
+    if (data) {
         if (width > 0 && height > 0) {
             TextureInfo *texture = &textureList[texID];
             StrCopy(texture->fileName, filePath);
 
             float normalize = 0;
-            if (FindStringToken(fileName, "@2", 1) > 0)
+            if (FindStringToken(texture->fileName, "@2", 1) > 0)
                 normalize = 2.0;
-            else if (FindStringToken(fileName, "@1", 1) > 0)
+            else if (FindStringToken(texture->fileName, "@1", 1) > 0)
                 normalize = 0.5;
             else
                 normalize = 1.0;
+
+#if RETRO_PLATFORM == RETRO_PS3
+            int potW = GetNextPOT(width);
+            int potH = GetNextPOT(height);
+            texture->widthN  = normalize / potW;
+            texture->heightN = normalize / potH;
+#else
             texture->widthN  = normalize / width;
             texture->heightN = normalize / height;
+#endif
 
 #if RETRO_USING_OPENGL
             glBindTexture(GL_TEXTURE_2D, texture->id);
 #endif
 
-            int id = 0;
             switch (texture->format) {
                 default: break;
                 case TEXFMT_RGBA4444: {
-                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+#if RETRO_PLATFORM == RETRO_PS3
+                    ushort *pixels = (ushort *)memalign(128, potW * potH * sizeof(ushort));
+                    if (pixels) {
+                        memset(pixels, 0, potW * potH * sizeof(ushort));
 
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
-                            int r = data[id++];
-                            int g = data[id++];
-                            int b = data[id++];
-                            int a = data[id++];
-
-                            pixels[x + (y * width)] = ((a >> 4) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+                        uint32_t *src = (uint32_t *)data;
+                        for (int y = 0; y < height; ++y) {
+                            ushort *dst = &pixels[y * potW];
+                            for (int x = 0; x < width; ++x) {
+                                uint32_t p = *src++;
+                                int r = (p >> 24) & 0xFF;
+                                int g = (p >> 16) & 0xFF;
+                                int b = (p >> 8) & 0xFF;
+                                int a = (p >> 0) & 0xFF;
+                                *dst++ = ((r >> 4) << 12) | ((g >> 4) << 8) | ((b >> 4) << 4) | (a >> 4);
+                            }
                         }
-                    }
 
 #if RETRO_USING_OPENGL
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture->width, texture->height, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, pixels);
-                    glBindTexture(GL_TEXTURE_2D, 0);
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, potW, potH, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, pixels);
 #endif
+                        free(pixels);
+                    }
+#else
+                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+                    if (pixels) {
+                        int id = 0;
+                        for (int y = 0; y < height; ++y) {
+                            for (int x = 0; x < width; ++x) {
+                                int r = data[id++];
+                                int g = data[id++];
+                                int b = data[id++];
+                                int a = data[id++];
 
-                    free(pixels);
+                                pixels[x + (y * width)] = ((a >> 4) << 12) | ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+                            }
+                        }
+#if RETRO_USING_OPENGL
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture->width, texture->height, GL_RGBA, GL_UNSIGNED_SHORT_4_4_4_4, pixels);
+#endif
+                        free(pixels);
+                    }
+#endif
                     break;
                 }
                 case TEXFMT_RGBA5551: {
-                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+#if RETRO_PLATFORM == RETRO_PS3
+                    ushort *pixels = (ushort *)memalign(128, potW * potH * sizeof(ushort));
+                    if (pixels) {
+                        memset(pixels, 0, potW * potH * sizeof(ushort));
 
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
-                            int r = data[id++];
-                            int g = data[id++];
-                            int b = data[id++];
-                            int a = data[id++];
-
-                            pixels[x + (y * width)] = RGB888_TO_RGB5551(r, g, b) | (a ? 1 : 0);
+                        uint32_t *src = (uint32_t *)data;
+                        for (int y = 0; y < height; ++y) {
+                            ushort *dst = &pixels[y * potW];
+                            for (int x = 0; x < width; ++x) {
+                                uint32_t p = *src++;
+                                int r = (p >> 24) & 0xFF;
+                                int g = (p >> 16) & 0xFF;
+                                int b = (p >> 8) & 0xFF;
+                                int a = (p >> 0) & 0xFF;
+                                *dst++ = RGB888_TO_RGB5551(r, g, b) | (a ? 1 : 0);
+                            }
                         }
-                    }
-#if RETRO_USING_OPENGL
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture->width, texture->height, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, pixels);
-                    glBindTexture(GL_TEXTURE_2D, 0);
-#endif
 
-                    free(pixels);
+#if RETRO_USING_OPENGL
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, potW, potH, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, pixels);
+#endif
+                        free(pixels);
+                    }
+#else
+                    ushort *pixels = (ushort *)malloc(width * height * sizeof(ushort));
+                    if (pixels) {
+                        int id = 0;
+                        for (int y = 0; y < height; ++y) {
+                            for (int x = 0; x < width; ++x) {
+                                int r = data[id++];
+                                int g = data[id++];
+                                int b = data[id++];
+                                int a = data[id++];
+
+                                pixels[x + (y * width)] = RGB888_TO_RGB5551(r, g, b) | (a ? 1 : 0);
+                            }
+                        }
+#if RETRO_USING_OPENGL
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture->width, texture->height, GL_RGBA, GL_UNSIGNED_SHORT_5_5_5_1, pixels);
+#endif
+                        free(pixels);
+                    }
+#endif
                     break;
                 }
                 case TEXFMT_RGBA8888: {
-                    uint *pixels = (uint *)malloc(width * height * sizeof(uint));
+#if RETRO_PLATFORM == RETRO_PS3
+                    uint *pixels = (uint *)memalign(128, potW * potH * sizeof(uint));
+                    if (pixels) {
+                        memset(pixels, 0, potW * potH * sizeof(uint));
 
-                    for (int y = 0; y < height; ++y) {
-                        for (int x = 0; x < width; ++x) {
-                            int r = data[id++];
-                            int g = data[id++];
-                            int b = data[id++];
-                            int a = data[id++];
-
-                            pixels[x + (y * width)] = (a << 24) | (r << 16) | (g << 8) | (b << 0);
+                        uint32_t *src = (uint32_t *)data;
+                        for (int y = 0; y < height; ++y) {
+                            uint *dst = &pixels[y * potW];
+                            for (int x = 0; x < width; ++x) {
+                                uint32_t p = *src++;
+                                int r = (p >> 24) & 0xFF;
+                                int g = (p >> 16) & 0xFF;
+                                int b = (p >> 8) & 0xFF;
+                                int a = (p >> 0) & 0xFF;
+                                *dst++ = (r << 24) | (g << 16) | (b << 8) | (a << 0);
+                            }
                         }
-                    }
 
 #if RETRO_USING_OPENGL
-                    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture->width, texture->height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-                    glBindTexture(GL_TEXTURE_2D, 0);
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, potW, potH, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 #endif
+                        free(pixels);
+                    }
+#else
+                    uint *pixels = (uint *)malloc(width * height * sizeof(uint));
+                    if (pixels) {
+                        int id = 0;
+                        for (int y = 0; y < height; ++y) {
+                            for (int x = 0; x < width; ++x) {
+                                int r = data[id++];
+                                int g = data[id++];
+                                int b = data[id++];
+                                int a = data[id++];
 
-                    free(pixels);
+                                pixels[x + (y * width)] = (a << 24) | (r << 16) | (g << 8) | (b << 0);
+                            }
+                        }
+#if RETRO_USING_OPENGL
+                        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, texture->width, texture->height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+#endif
+                        free(pixels);
+                    }
+#endif
                     break;
                 }
             }
+
+#if RETRO_USING_OPENGL
+            glBindTexture(GL_TEXTURE_2D, 0);
+#endif
+
         }
 
-        CloseFile();
         stbi_image_free(data);
     }
 }
