@@ -17,29 +17,33 @@ void LoadAnimationFile(char *filePath)
 {
     FileInfo info;
     if (LoadFile(filePath, &info)) {
-        byte fileBuffer = 0;
+        size_t size = (size_t)info.vfileSize;
+        byte *fileData = (byte *)malloc(size);
+        if (!fileData) {
+            CloseFile();
+            return;
+        }
+        FileRead(fileData, (int)size);
+        CloseFile();
+
+        byte *ptr = fileData;
         char strBuf[0x21];
         byte sheetIDs[0x18];
         sheetIDs[0] = 0;
 
-        byte sheetCount = 0;
-        FileRead(&sheetCount, 1);
+        byte sheetCount = *ptr++;
 
         for (int s = 0; s < sheetCount; ++s) {
-            FileRead(&fileBuffer, 1);
-            if (fileBuffer) {
+            byte len = *ptr++;
+            if (len) {
                 int i = 0;
-                for (; i < fileBuffer; ++i) FileRead(&strBuf[i], 1);
+                for (; i < len; ++i) strBuf[i] = *ptr++;
                 strBuf[i] = 0;
-                GetFileInfo(&info);
-                CloseFile();
                 sheetIDs[s] = AddGraphicsFile(strBuf);
-                SetFileInfo(&info);
             }
         }
 
-        byte animCount = 0;
-        FileRead(&animCount, 1);
+        byte animCount = *ptr++;
         AnimationFile *animFile = &animationFileList[animationFileCount];
         animFile->animCount     = animCount;
         animFile->aniListOffset = animationCount;
@@ -47,33 +51,24 @@ void LoadAnimationFile(char *filePath)
         for (int a = 0; a < animCount; ++a) {
             SpriteAnimation *anim = &animationList[animationCount++];
             anim->frameListOffset = animFrameCount;
-            FileRead(&fileBuffer, 1);
-            FileRead(anim->name, fileBuffer);
-            anim->name[fileBuffer] = 0;
-            FileRead(&anim->frameCount, 1);
-            FileRead(&anim->speed, 1);
-            FileRead(&anim->loopPoint, 1);
-            FileRead(&anim->rotationStyle, 1);
+            byte len = *ptr++;
+            for (int i = 0; i < len; ++i) anim->name[i] = *ptr++;
+            anim->name[len] = 0;
+            anim->frameCount = *ptr++;
+            anim->speed = *ptr++;
+            anim->loopPoint = *ptr++;
+            anim->rotationStyle = *ptr++;
 
             for (int j = 0; j < anim->frameCount; ++j) {
                 SpriteFrame *frame = &animFrames[animFrameCount++];
-                FileRead(&frame->sheetID, 1);
-                frame->sheetID = sheetIDs[frame->sheetID];
-                FileRead(&frame->hitboxID, 1);
-                FileRead(&fileBuffer, 1);
-                frame->sprX = fileBuffer;
-                FileRead(&fileBuffer, 1);
-                frame->sprY = fileBuffer;
-                FileRead(&fileBuffer, 1);
-                frame->width = fileBuffer;
-                FileRead(&fileBuffer, 1);
-                frame->height = fileBuffer;
-
-                sbyte buffer = 0;
-                FileRead(&buffer, 1);
-                frame->pivotX = buffer;
-                FileRead(&buffer, 1);
-                frame->pivotY = buffer;
+                frame->sheetID = sheetIDs[*ptr++];
+                frame->hitboxID = *ptr++;
+                frame->sprX = *ptr++;
+                frame->sprY = *ptr++;
+                frame->width = *ptr++;
+                frame->height = *ptr++;
+                frame->pivotX = (sbyte)*ptr++;
+                frame->pivotY = (sbyte)*ptr++;
             }
 
             // 90 Degree (Extra rotation Frames) rotation
@@ -82,18 +77,18 @@ void LoadAnimationFile(char *filePath)
         }
 
         animFile->hitboxListOffset = hitboxCount;
-        FileRead(&fileBuffer, 1);
-        for (int i = 0; i < fileBuffer; ++i) {
+        byte hitCount = *ptr++;
+        for (int i = 0; i < hitCount; ++i) {
             Hitbox *hitbox = &hitboxList[hitboxCount++];
             for (int d = 0; d < HITBOX_DIR_COUNT; ++d) {
-                FileRead(&hitbox->left[d], 1);
-                FileRead(&hitbox->top[d], 1);
-                FileRead(&hitbox->right[d], 1);
-                FileRead(&hitbox->bottom[d], 1);
+                hitbox->left[d] = (sbyte)*ptr++;
+                hitbox->top[d] = (sbyte)*ptr++;
+                hitbox->right[d] = (sbyte)*ptr++;
+                hitbox->bottom[d] = (sbyte)*ptr++;
             }
         }
 
-        CloseFile();
+        free(fileData);
     }
 }
 void ClearAnimationData()

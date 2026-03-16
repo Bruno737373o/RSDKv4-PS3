@@ -1014,45 +1014,60 @@ void LoadSfx(char *filePath, byte sfxID)
                             int srcFrameCount = (int)(dataLen / (srcChannels * sampleSize));
                             
                             // We want 44100Hz Stereo
-                            double ratio = (double)srcRate / (double)AUDIO_FREQUENCY;
-                            int dstFrameCount = (int)(srcFrameCount / ratio);
-                            int dstSampleCount = dstFrameCount * 2;
-                            
-                            Sint16 *buffer = (Sint16 *)memalign(16, dstSampleCount * sizeof(Sint16));
-                            
-                            for (int f = 0; f < dstFrameCount; f++) {
-                                double pos = f * ratio;
-                                int i = (int)pos;
-                                double fract = pos - i;
-                                
-                                if (i + 1 >= srcFrameCount) {
-                                    // Last frame
-                                    byte *samplePtr = ptr + (i * srcChannels * sampleSize);
-                                    Sint16 valL = (bitsPerSample == 16) ? (Sint16)READ_LE16(samplePtr) : (Sint16)((samplePtr[0] - 128) << 8);
-                                    Sint16 valR = (srcChannels > 1) ? ((bitsPerSample == 16) ? (Sint16)READ_LE16(samplePtr + sampleSize) : (Sint16)((samplePtr[1] - 128) << 8)) : valL;
-                                    buffer[f * 2 + 0] = valL;
-                                    buffer[f * 2 + 1] = valR;
-                                    continue;
+                            if (srcRate == 44100 && srcChannels == 2 && bitsPerSample == 16) {
+                                // Fast path for 44100Hz Stereo 16-bit
+                                Sint16 *buffer = (Sint16 *)memalign(16, srcFrameCount * 2 * sizeof(Sint16));
+                                for (int i = 0; i < srcFrameCount * 2; ++i) {
+                                    buffer[i] = (Sint16)READ_LE16(ptr + i * 2);
                                 }
+                                LockAudioDevice();
+                                StrCopy(sfxList[sfxID].name, filePath);
+                                sfxList[sfxID].buffer = buffer;
+                                sfxList[sfxID].length = (size_t)(srcFrameCount * 2);
+                                sfxList[sfxID].loaded = true;
+                                UnlockAudioDevice();
+                            } else {
+                                double ratio = (double)srcRate / (double)AUDIO_FREQUENCY;
+                                int dstFrameCount = (int)(srcFrameCount / ratio);
+                                int dstSampleCount = dstFrameCount * 2;
+                                
+                                Sint16 *buffer = (Sint16 *)memalign(16, dstSampleCount * sizeof(Sint16));
+                                uint32_t ratio_fp = (uint32_t)(ratio * 65536.0);
+                                
+                                for (int f = 0; f < dstFrameCount; f++) {
+                                    uint64_t pos_fp = (uint64_t)f * ratio_fp;
+                                    int i = (int)(pos_fp >> 16);
+                                    uint32_t fract_fp = (uint32_t)(pos_fp & 0xFFFF);
+                                    
+                                    if (i + 1 >= srcFrameCount) {
+                                        // Last frame
+                                        byte *samplePtr = ptr + (i * srcChannels * sampleSize);
+                                        Sint16 valL = (bitsPerSample == 16) ? (Sint16)READ_LE16(samplePtr) : (Sint16)((samplePtr[0] - 128) << 8);
+                                        Sint16 valR = (srcChannels > 1) ? ((bitsPerSample == 16) ? (Sint16)READ_LE16(samplePtr + sampleSize) : (Sint16)((samplePtr[1] - 128) << 8)) : valL;
+                                        buffer[f * 2 + 0] = valL;
+                                        buffer[f * 2 + 1] = valR;
+                                        continue;
+                                    }
 
-                                byte *p1 = ptr + (i * srcChannels * sampleSize);
-                                byte *p2 = ptr + ((i + 1) * srcChannels * sampleSize);
+                                    byte *p1 = ptr + (i * srcChannels * sampleSize);
+                                    byte *p2 = ptr + ((i + 1) * srcChannels * sampleSize);
 
-                                Sint16 s1L = (bitsPerSample == 16) ? (Sint16)READ_LE16(p1) : (Sint16)((p1[0] - 128) << 8);
-                                Sint16 s1R = (srcChannels > 1) ? ((bitsPerSample == 16) ? (Sint16)READ_LE16(p1 + sampleSize) : (Sint16)((p1[1] - 128) << 8)) : s1L;
-                                Sint16 s2L = (bitsPerSample == 16) ? (Sint16)READ_LE16(p2) : (Sint16)((p2[0] - 128) << 8);
-                                Sint16 s2R = (srcChannels > 1) ? ((bitsPerSample == 16) ? (Sint16)READ_LE16(p2 + sampleSize) : (Sint16)((p2[1] - 128) << 8)) : s2L;
+                                    Sint16 s1L = (bitsPerSample == 16) ? (Sint16)READ_LE16(p1) : (Sint16)((p1[0] - 128) << 8);
+                                    Sint16 s1R = (srcChannels > 1) ? ((bitsPerSample == 16) ? (Sint16)READ_LE16(p1 + sampleSize) : (Sint16)((p1[1] - 128) << 8)) : s1L;
+                                    Sint16 s2L = (bitsPerSample == 16) ? (Sint16)READ_LE16(p2) : (Sint16)((p2[0] - 128) << 8);
+                                    Sint16 s2R = (srcChannels > 1) ? ((bitsPerSample == 16) ? (Sint16)READ_LE16(p2 + sampleSize) : (Sint16)((p2[1] - 128) << 8)) : s2L;
 
-                                buffer[f * 2 + 0] = (Sint16)(s1L + (s2L - s1L) * fract);
-                                buffer[f * 2 + 1] = (Sint16)(s1R + (s2R - s1R) * fract);
+                                    buffer[f * 2 + 0] = (Sint16)(s1L + (((int64_t)(s2L - s1L) * fract_fp) >> 16));
+                                    buffer[f * 2 + 1] = (Sint16)(s1R + (((int64_t)(s2R - s1R) * fract_fp) >> 16));
+                                }
+                                
+                                LockAudioDevice();
+                                StrCopy(sfxList[sfxID].name, filePath);
+                                sfxList[sfxID].buffer = buffer;
+                                sfxList[sfxID].length = (size_t)dstSampleCount;
+                                sfxList[sfxID].loaded = true;
+                                UnlockAudioDevice();
                             }
-                            
-                            LockAudioDevice();
-                            StrCopy(sfxList[sfxID].name, filePath);
-                            sfxList[sfxID].buffer = buffer;
-                            sfxList[sfxID].length = (size_t)dstSampleCount;
-                            sfxList[sfxID].loaded = true;
-                            UnlockAudioDevice();
                         }
                         break;
                     }

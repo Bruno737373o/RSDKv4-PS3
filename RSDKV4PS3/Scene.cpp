@@ -833,6 +833,7 @@ void LoadStageFiles(void)
         PrintLog("Reloading Scene %s - %s", stageListNames[activeStageList], stageList[activeStageList][stageListPosition].name);
     }
     LoadStageChunks();
+
     for (int i = 0; i < TRACK_COUNT; ++i) SetMusicTrack("", i, false, 0);
 
     memset(objectEntityList, 0, ENTITY_COUNT * sizeof(Entity));
@@ -843,8 +844,11 @@ void LoadStageFiles(void)
         objectEntityList[i].visible            = true;
         objectEntityList[i].tileCollisions     = true;
     }
+
     LoadActLayout();
+
     Init3DFloorBuffer(0);
+
     ProcessStartupObjects();
 }
 int LoadActFile(const char *ext, int stageID, FileInfo *info)

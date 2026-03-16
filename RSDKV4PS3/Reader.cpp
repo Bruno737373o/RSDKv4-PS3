@@ -425,53 +425,52 @@ void FileRead(void *dest, int size)
                     }
                 }
 
-                *data = encryptionStringB[eStringPosB] ^ eStringNo ^ fileBuffer[bufferPosition++];
-                if (eNybbleSwap)
-                    *data = ((*data << 4) + (*data >> 4)) & 0xFF;
-                *data ^= encryptionStringA[eStringPosA];
+                int readCount = readSize - bufferPosition;
+                if (readCount > size)
+                    readCount = size;
 
-                ++eStringPosA;
-                ++eStringPosB;
-                if (eStringPosA <= 0x0F) {
-                    if (eStringPosB > 0x0C) {
-                        eStringPosB = 0;
+                size -= readCount;
+                while (readCount--) {
+                    *data = encryptionStringB[eStringPosB] ^ eStringNo ^ fileBuffer[bufferPosition++];
+                    if (eNybbleSwap)
+                        *data = ((*data << 4) + (*data >> 4)) & 0xFF;
+                    *data ^= encryptionStringA[eStringPosA];
+
+                    ++eStringPosA;
+                    ++eStringPosB;
+                    if (eStringPosA <= 0x0F) {
+                        if (eStringPosB > 0x0C) {
+                            eStringPosB = 0;
+                            eNybbleSwap ^= 0x01;
+                        }
+                    }
+                    else if (eStringPosB <= 0x08) {
+                        eStringPosA = 0;
                         eNybbleSwap ^= 0x01;
                     }
-                }
-                else if (eStringPosB <= 0x08) {
-                    eStringPosA = 0;
-                    eNybbleSwap ^= 0x01;
-                }
-                else {
-                    eStringNo += 2;
-                    eStringNo &= 0x7F;
-
-                    if (eNybbleSwap != 0) {
-                        int key1    = mulUnsignedHigh(ENC_KEY_1, eStringNo);
-                        int key2    = mulUnsignedHigh(ENC_KEY_2, eStringNo);
-                        eNybbleSwap = 0;
-
-                        int temp1 = key2 + (eStringNo - key2) / 2;
-                        int temp2 = key1 / 8 * 3;
-
-                        eStringPosA = eStringNo - temp1 / 4 * 7;
-                        eStringPosB = eStringNo - temp2 * 4 + 2;
-                    }
                     else {
-                        int key1    = mulUnsignedHigh(ENC_KEY_1, eStringNo);
-                        int key2    = mulUnsignedHigh(ENC_KEY_2, eStringNo);
-                        eNybbleSwap = 1;
+                        eStringNo += 2;
+                        eStringNo &= 0x7F;
+
+                        int key1 = mulUnsignedHigh(ENC_KEY_1, eStringNo);
+                        int key2 = mulUnsignedHigh(ENC_KEY_2, eStringNo);
 
                         int temp1 = key2 + (eStringNo - key2) / 2;
-                        int temp2 = key1 / 8 * 3;
+                        int temp2 = (key1 >> 3) * 3;
 
-                        eStringPosB = eStringNo - temp1 / 4 * 7;
-                        eStringPosA = eStringNo - temp2 * 4 + 3;
+                        if (eNybbleSwap != 0) {
+                            eNybbleSwap = 0;
+                            eStringPosA = eStringNo - (temp1 >> 2) * 7;
+                            eStringPosB = eStringNo - (temp2 << 2) + 2;
+                        }
+                        else {
+                            eNybbleSwap = 1;
+                            eStringPosB = eStringNo - (temp1 >> 2) * 7;
+                            eStringPosA = eStringNo - (temp2 << 2) + 3;
+                        }
                     }
+                    ++data;
                 }
-
-                ++data;
-                --size;
             }
         }
         else {

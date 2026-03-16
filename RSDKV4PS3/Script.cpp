@@ -2876,8 +2876,6 @@ bool CheckOpcodeType(char *text)
 
 void ParseScriptFile(char *scriptName, int scriptID)
 {
-    uint64_t startTime = GetSystemTime();
-
     jumpTableStackPos = 0;
     lineID            = 0;
 
@@ -3231,13 +3229,11 @@ void ParseScriptFile(char *scriptName, int scriptID)
         free(scriptBuf);
         CloseFile();
     }
-    PrintLog("Parsed Script %s in %llu us", scriptName, GetSystemTime() - startTime);
 }
 #endif
 
 void LoadBytecode(int stageListID, int scriptID)
 {
-    uint64_t startTime = GetSystemTime();
     char scriptPath[0x40];
     switch (stageListID) {
         case STAGELIST_PRESENTATION:
@@ -3443,7 +3439,6 @@ void LoadBytecode(int stageListID, int scriptID)
 
         CloseFile();
     }
-    PrintLog("Loaded Bytecode %s in %llu us", scriptPath, GetSystemTime() - startTime);
 }
 
 void ClearScriptData()
