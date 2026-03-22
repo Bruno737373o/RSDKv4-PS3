@@ -461,23 +461,27 @@ void CopyDirectory(const char *src, const char *dst, int depth)
 
 bool InstallMod(ModInfo *info)
 {
-    if (!info)
+    if (!info || info->basePath.empty())
         return false;
 
-    PrintLog("Installing mod: %s", info->name.c_str());
+    PrintLog("Installing mod: %s from %s", info->name.c_str(), info->basePath.c_str());
 
     char srcPath[0x400];
-    snprintf(srcPath, sizeof(srcPath), "/dev_hdd0/packages/%s", info->folder.c_str());
+    snprintf(srcPath, sizeof(srcPath), "%s/%s", info->basePath.c_str(), info->folder.c_str());
 
     char modsDir[0x400];
 #if RETRO_PLATFORM == RETRO_PS3
     if (StrComp(modsPath, BASE_PATH))
         snprintf(modsDir, sizeof(modsDir), "%smods", modsPath);
-    else
-        snprintf(modsDir, sizeof(modsDir), "%s", modsPath);
+    else {
+        StrCopy(modsDir, modsPath);
+        if (modsDir[StrLength(modsDir) - 1] == '/')
+            modsDir[StrLength(modsDir) - 1] = '\0';
+    }
 #else
     snprintf(modsDir, sizeof(modsDir), "%smods", modsPath);
 #endif
+
     mkdir(modsDir, 0777);
 
     char dstPath[0x400];
@@ -494,25 +498,41 @@ void InitModInstallList()
 {
     modInstallList.clear();
 
-    const char *packagesPath = "/dev_hdd0/packages";
-    DIR *dir                 = opendir(packagesPath);
-    if (dir) {
-        struct dirent *entry;
-        while ((entry = readdir(dir)) != NULL) {
-            if (entry->d_name[0] == '.')
-                continue;
+    const char *searchPaths[] = {
+        "/dev_usb000",
+        "/dev_usb001",
+        "/dev_usb002",
+        "/dev_usb003",
+        "/dev_usb004",
+		"/dev_usb005",
+        "/dev_usb006"
+    };
 
-            char fullPath[0x400];
-            snprintf(fullPath, sizeof(fullPath), "%s/%s", packagesPath, entry->d_name);
+    for (int i = 0; i < 6; ++i) {
+        const char *packagesPath = searchPaths[i];
+        DIR *dir = opendir(packagesPath);
+        
+        if (dir) {
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != NULL) {
+                if (entry->d_name[0] == '.')
+                    continue;
 
-            struct stat st;
-            if (stat(fullPath, &st) == 0 && S_ISDIR(st.st_mode)) {
-                ModInfo info;
-                if (LoadMod(&info, packagesPath, entry->d_name, false))
-                    modInstallList.push_back(info);
+                char fullPath[0x400];
+                snprintf(fullPath, sizeof(fullPath), "%s/%s", packagesPath, entry->d_name);
+
+                struct stat st;
+                if (stat(fullPath, &st) == 0 && S_ISDIR(st.st_mode)) {
+                    ModInfo info;
+                    if (LoadMod(&info, packagesPath, entry->d_name, false)) {
+                        info.basePath = packagesPath; 
+                        modInstallList.push_back(info);
+                        PrintLog("Mod encontrado en %s: %s", packagesPath, info.name.c_str());
+                    }
+                }
             }
+            closedir(dir);
         }
-        closedir(dir);
     }
 }
 #endif
