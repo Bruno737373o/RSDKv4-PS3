@@ -1,0 +1,142 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|PS3">
+      <Configuration>Debug</Configuration>
+      <Platform>PS3</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|PS3">
+      <Configuration>Release</Configuration>
+      <Platform>PS3</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCTargetsPath Condition="'$(VCTargetsPath11)' != '' and '$(VSVersion)' == '' and '$(VisualStudioVersion)' == ''">$(VCTargetsPath11)</VCTargetsPath>
+    <ProjectGuid>{9FA572B9-1F46-43A7-800E-74689F661AC5}</ProjectGuid>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|PS3'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>SNC</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|PS3'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <PlatformToolset>SNC</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Condition="'$(DebuggerFlavor)'=='PS3Debugger'" Label="OverrideDebuggerDefaults">
+    <!--LocalDebuggerCommand>$(TargetPath)</LocalDebuggerCommand-->
+    <!--LocalDebuggerCommandArguments></LocalDebuggerCommandArguments-->
+    <!--LocalDebuggerCommandLine>-r -e -m</LocalDebuggerCommandLine-->
+    <!--LocalRunCommandLine>-r</LocalRunCommandLine-->
+    <!--LocalTunerCommandLine></LocalTunerCommandLine-->
+    <!--LocalDebuggerFileServingDirectory>$(ProjectDir)</LocalDebuggerFileServingDirectory-->
+    <!--LocalDebuggerHomeDirectory>$(ProjectDir)</LocalDebuggerHomeDirectory-->
+    <!--LocalDebuggerProjectFile></LocalDebuggerProjectFile-->
+    <!--LocalDebuggerResetType>Soft</LocalDebuggerResetType-->
+    <!--LocalDebuggerClearTty>False</LocalDebuggerClearTty-->
+  </PropertyGroup>
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|PS3'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|PS3'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|PS3'">
+    <TargetExt>.elf</TargetExt>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|PS3'">
+    <ClCompile>
+      <PreprocessorDefinitions>_DEBUG;__CELL_ASSERT__;%(PreprocessorDefinitions);</PreprocessorDefinitions>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|PS3'">
+    <ClCompile>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions);</PreprocessorDefinitions>
+      <OptimizationLevel>Level2</OptimizationLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AdditionalIncludeDirectories>C:\RSDKv4-PS3\RSDKv4;C:\RSDKv4-PS3\RSDKv4\NativeObjects;C:\RSDKv4-PS3\dependencies\all;C:\RSDKv4-PS3\dependencies\all\asio\asio\include;C:\RSDKv4-PS3\dependencies\all\libogg\include;C:\RSDKv4-PS3\dependencies\all\pugixml\src;C:\RSDKv4-PS3\dependencies\all\stb-image;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalOptions>-DRSDK_AUTOBUILD=1 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <OutputFormat>ELFFile</OutputFormat>
+    </Link>
+    <Link>
+      <AdditionalDependencies>libcs.a;libsn.a;pugixml.a;libivorbis.a;libogg.a;libPSGL.a;libPSGLU.a;libPSGLFX.a;libPSGLcgc.a;libsysmodule_stub.a;libresc_stub.a;libm.a;libdbgfont.a;libsysutil_stub.a;libio_stub.a;libaudio_stub.a;libpthread.a;libsysutil_game_stub.a;libnet_stub.a;libcgc.a;libgcm_cmd.a;libgcm_sys_stub.a;libstdc++.a;libnetctl_stub.a;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <Link>
+      <AdditionalLibraryDirectories>C:\usr\local\cell\target\ppu\lib;C:\usr\local\cell\target\ppu\lib\PSGL\RSX\opt;C:\RSDKv4-PS3\RSDKv4-PS3\RSDKv4\PS3_Release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalOptions>--strip-unused-data %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\..\RSDKv4\Animation.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Audio.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\AudioPS3.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Collision.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Debug.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Drawing.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\fcaseopen.c" />
+    <ClCompile Include="..\..\..\RSDKv4\Ini.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Input.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\main.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Math.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\ModAPI.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\NativeObjects\All.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Networking.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Object.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Palette.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Reader.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Renderer.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\RetroEngine.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Scene.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Scene3D.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Script.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Sprite.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\String.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Text.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\UPnP.cpp" />
+    <ClCompile Include="..\..\..\RSDKv4\Userdata.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\RSDKv4\Animation.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Audio.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\AudioPS3.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Collision.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Debug.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Drawing.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\fcaseopen.h" />
+    <ClInclude Include="..\..\..\RSDKv4\Ini.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Input.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Math.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\ModAPI.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Networking.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Object.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Palette.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\ps3_compat.h" />
+    <ClInclude Include="..\..\..\RSDKv4\Reader.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Renderer.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\resource.h" />
+    <ClInclude Include="..\..\..\RSDKv4\RetroEngine.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Scene.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Scene3D.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Script.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Sprite.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\String.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Text.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\UPnP.hpp" />
+    <ClInclude Include="..\..\..\RSDKv4\Userdata.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <Image Include="..\..\..\RSDKv4\RSDKv4 Decomp Icon.ico" />
+  </ItemGroup>
+  <Import Condition="'$(ConfigurationType)' == 'Makefile' and Exists('$(VCTargetsPath)\Platforms\$(Platform)\SCE.Makefile.$(Platform).targets')" Project="$(VCTargetsPath)\Platforms\$(Platform)\SCE.Makefile.$(Platform).targets" />
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

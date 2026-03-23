@@ -1,0 +1,34 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="..\..\..\dependencies\all\tremor\block.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\codebook.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\floor0.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\floor1.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\info.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\mapping0.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\mdct.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\registry.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\res012.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\sharedbook.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\synthesis.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\vorbisfile.c" />
+    <ClCompile Include="..\..\..\dependencies\all\tremor\window.c" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\..\dependencies\all\tremor\block.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\codebook.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\codec_internal.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\config_types.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\ivorbiscodec.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\ivorbisfile.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\lsp_lookup.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\mdct.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\mdct_lookup.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\misc.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\os.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\registry.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\window.h" />
+    <ClInclude Include="..\..\..\dependencies\all\tremor\window_lookup.h" />
+  </ItemGroup>
+</Project>
