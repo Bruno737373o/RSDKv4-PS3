@@ -732,18 +732,7 @@ void SettingsScreen_Main(void *objPtr)
                 }
 
                 if (Engine.globalBoxRegion != saveGame->boxRegion) {
-                    int package = 0;
-                    switch (Engine.globalBoxRegion) {
-                        case REGION_JP: package = LoadTexture("Data/Game/Models/Package_JP.png", TEXFMT_RGBA8888); break;
-                        case REGION_US: package = LoadTexture("Data/Game/Models/Package_US.png", TEXFMT_RGBA8888); break;
-                        case REGION_EU: package = LoadTexture("Data/Game/Models/Package_EU.png", TEXFMT_RGBA8888); break;
-                    }
                     Engine.globalBoxRegion = saveGame->boxRegion;
-                    switch (Engine.globalBoxRegion) {
-                        case REGION_JP: ReplaceTexture("Data/Game/Models/Package_JP.png", package); break;
-                        case REGION_US: ReplaceTexture("Data/Game/Models/Package_US.png", package); break;
-                        case REGION_EU: ReplaceTexture("Data/Game/Models/Package_EU.png", package); break;
-                    }
                 }
                 WriteSaveRAMData();
                 return;

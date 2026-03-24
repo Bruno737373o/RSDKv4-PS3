@@ -821,7 +821,7 @@ bool PlayMusic(int track, int musStartPos)
 #if RETRO_PLATFORM == RETRO_PS3
             musicLoadStartTime = GetSystemTime();
             sys_ppu_thread_t thread;
-            sys_ppu_thread_create(&thread, LoadMusic_Thread, 0, 100, 0x10000, SYS_PPU_THREAD_CREATE_JOINABLE, "MusicLoadThread");
+            sys_ppu_thread_create(&thread, LoadMusic_Thread, 0, 100, 0x10000, 0, "MusicLoadThread");
 #else
             LoadMusic(NULL);
 #endif

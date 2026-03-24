@@ -490,7 +490,6 @@ public:
 #if RETRO_USE_MOD_LOADER
     bool modMenuCalled;
     bool forceSonic1;
-    bool modloaderPS3;
 #endif
 #endif
 

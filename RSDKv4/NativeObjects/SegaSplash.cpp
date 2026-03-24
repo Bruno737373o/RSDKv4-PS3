@@ -25,23 +25,20 @@ void SegaSplash_Create(void *objPtr)
     LoadMesh("Data/Game/Models/Intro.bin", introTex);
 
     int package = 0;
-    switch (Engine.globalBoxRegion) {
-        case REGION_JP:
-            package = LoadTexture("Data/Game/Models/Package_JP.png", TEXFMT_RGBA5551);
-            LoadMesh("Data/Game/Models/JPBox.bin", package);
-            LoadMesh("Data/Game/Models/JPCartridge.bin", package);
-            break;
-        case REGION_US:
-            package = LoadTexture("Data/Game/Models/Package_US.png", TEXFMT_RGBA5551);
-            LoadMesh("Data/Game/Models/Box.bin", package);
-            LoadMesh("Data/Game/Models/Cartridge.bin", package);
-            break;
-        case REGION_EU:
-            package = LoadTexture("Data/Game/Models/Package_EU.png", TEXFMT_RGBA5551);
-            LoadMesh("Data/Game/Models/Box.bin", package);
-            LoadMesh("Data/Game/Models/Cartridge.bin", package);
-            break;
-    }
+
+    package = LoadTexture("Data/Game/Models/Package_JP.png", TEXFMT_RGBA5551);
+    LoadMesh("Data/Game/Models/JPBox.bin", package);
+    LoadMesh("Data/Game/Models/JPCartridge.bin", package);
+
+    package = LoadTexture("Data/Game/Models/Package_US.png", TEXFMT_RGBA5551);
+    LoadMesh("Data/Game/Models/Box.bin", package);
+    LoadMesh("Data/Game/Models/Cartridge.bin", package);
+
+    package = LoadTexture("Data/Game/Models/Package_EU.png", TEXFMT_RGBA5551);
+    // Box.bin and Cartridge.bin are the same for US and EU, but they use different textures.
+    // LoadMesh only creates a new entry if the file path OR the texture ID is different.
+    LoadMesh("Data/Game/Models/Box.bin", package);
+    LoadMesh("Data/Game/Models/Cartridge.bin", package);
 
     LoadTexture("Data/Game/Menu/Circle.png", TEXFMT_RGBA4444);
     LoadTexture("Data/Game/Menu/BG1.png", TEXFMT_RGBA4444);

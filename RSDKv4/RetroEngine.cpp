@@ -429,7 +429,6 @@ void RetroEngine::Init()
 #if RETRO_USE_MOD_LOADER
     modMenuCalled = false;
     forceSonic1   = false;
-    modloaderPS3  = false;
 #endif
 #endif
 
@@ -846,11 +845,13 @@ void RetroEngine::Run()
             for (int s = 0; s < gameSpeed; ++s) {
                 ProcessInput();
 
-#if RETRO_USE_MOD_LOADER
-                if (Engine.modloaderPS3 && inputDevice[INPUT_SELECT].press) {
-					InitDevMenu();
+                if (Engine.devMenu && inputDevice[INPUT_SELECT].press) {
+                    ClearNativeObjects();
+                    CREATE_ENTITY(RetroGameLoop);
+                    if (Engine.gameDeviceType == RETRO_MOBILE)
+                        CREATE_ENTITY(VirtualDPad);
+                    Engine.gameMode = ENGINE_INITDEVMENU;
                 }
-#endif
 #endif
 
 #if !RETRO_USE_ORIGINAL_CODE
