@@ -180,7 +180,7 @@ void GenerateMD5FromString(const char *string, int len, uint *hash0, uint *hash1
         4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
         6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21};
 
-    static byte hashStream[0x400];
+    byte hashStream[0x400];
 
     *hash0 = 0x67452301;
     *hash1 = 0xefcdab89;
@@ -524,3 +524,4 @@ void ReadCreditsList(const char *filePath)
         CloseFile();
     }
 }
+

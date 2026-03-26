@@ -29,6 +29,7 @@ struct PreloadScene {
 extern int preloadStatus;
 extern int preloadListID;
 extern int preloadStageID;
+extern int preloadDelayTimer;
 extern PreloadScene *preloadedData;
 
 void InitBackgroundLoader();

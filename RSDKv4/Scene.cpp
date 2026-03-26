@@ -856,6 +856,7 @@ void LoadStageFiles(void)
 
     // End preloading once we are done with LoadStageFiles
     preloadStatus = PRELOAD_IDLE;
+    preloadDelayTimer = 180; // Wait 3 seconds before starting next background preload
 }
 int LoadActFile(const char *ext, int stageID, FileInfo *info)
 {

@@ -2918,6 +2918,9 @@ void ParseScriptFile(char *scriptName, int scriptID)
     StrCopy(scriptPath, "Data/Scripts/");
     StrAdd(scriptPath, scriptName);
     if (LoadFile(scriptPath, &info)) {
+        if (info.preloadedPtr) {
+            PrintLog("Loaded Preloaded File '%s'", scriptPath);
+        }
         int readMode   = READMODE_NORMAL;
         int parseMode  = PARSEMODE_SCOPELESS;
         char prevChar  = 0;

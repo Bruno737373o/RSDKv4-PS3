@@ -7,6 +7,21 @@
 #include <sys/synchronization.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <dirent.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
+#ifndef S_IFMT
+#define S_IFMT 0170000
+#endif
+#ifndef S_IFREG
+#define S_IFREG 0100000
+#endif
+#ifndef S_ISREG
+#define S_ISREG(m) (((m)&S_IFMT) == S_IFREG)
+#endif
+
 #endif
 
 static char *retro_strcasestr(const char *haystack, const char *needle)
@@ -31,6 +46,7 @@ static char *retro_strcasestr(const char *haystack, const char *needle)
 int preloadStatus = PRELOAD_IDLE;
 int preloadListID = -1;
 int preloadStageID = -1;
+int preloadDelayTimer = 0;
 
 PreloadScene *preloadedData = nullptr;
 
@@ -43,6 +59,331 @@ sys_ppu_thread_t preloadThread;
 bool preloadThreadRunning = false;
 
 void PreloadThreadFunc(uint64_t arg);
+
+// Helper to resolve modded and packed paths using native FILE I/O only
+static bool ThreadedResolvePath(char *dest, const char *filePath, int *packID, int *offset, int *size, bool *encrypted) {
+    char filePathBuf[0x100];
+    strncpy(filePathBuf, filePath, 0xFF);
+    filePathBuf[0xFF] = 0;
+    bool forceFolder = false;
+    bool isAbsolute = false;
+    
+    *packID = -1;
+    *offset = 0;
+    *size = 0;
+    *encrypted = false;
+
+#if RETRO_USE_MOD_LOADER
+    char pathLower[0x100];
+    int len = (int)strlen(filePath);
+    if (len > 0xFF) len = 0xFF;
+    for (int i = 0; i < len; i++) pathLower[i] = tolower(filePath[i]);
+    pathLower[len] = 0;
+
+    if (preloadMutexCreated) sys_lwmutex_lock(&preloadMutex, 0);
+    for (int m = 0; m < (int)modList.size(); m++) {
+        if (modList[m].active) {
+            std::map<std::string, std::string>::const_iterator it = modList[m].fileMap.find(pathLower);
+            if (it != modList[m].fileMap.end()) {
+                strncpy(filePathBuf, it->second.c_str(), 0xFF);
+                filePathBuf[0xFF] = 0;
+                forceFolder = true;
+                if (filePathBuf[0] == '/') isAbsolute = true;
+                break;
+            }
+        }
+    }
+    if (preloadMutexCreated) sys_lwmutex_unlock(&preloadMutex);
+
+    if (forceUseScripts && !forceFolder) {
+        if (strncasecmp(filePathBuf, "Data/Scripts/", 13) == 0 && (strcasestr(filePathBuf, ".txt"))) {
+            forceFolder = true;
+            char scriptPath[0x100];
+            strncpy(scriptPath, filePathBuf + 5, 0xFF); // Skip "Data/"
+            scriptPath[0xFF] = 0;
+            strncpy(filePathBuf, scriptPath, 0xFF);
+        }
+    }
+#endif
+
+    int fileIndex = -1;
+    if (!forceFolder) {
+        char pathLower2[0x100];
+        int len2 = (int)strlen(filePath);
+        if (len2 > 0xFF) len2 = 0xFF;
+        for (int i = 0; i < len2; i++) pathLower2[i] = tolower(filePath[i]);
+        pathLower2[len2] = 0;
+        
+        if (preloadMutexCreated) sys_lwmutex_lock(&preloadMutex, 0);
+        fileIndex = CheckFileInfo(pathLower2);
+        if (fileIndex != -1) {
+            *packID = rsdkContainer.files[fileIndex].packID;
+            *offset = rsdkContainer.files[fileIndex].offset;
+            *size = rsdkContainer.files[fileIndex].filesize;
+            *encrypted = rsdkContainer.files[fileIndex].encrypted;
+            strncpy(dest, rsdkContainer.packNames[*packID], 0x1FF);
+        }
+        if (preloadMutexCreated) sys_lwmutex_unlock(&preloadMutex);
+    }
+
+    if (fileIndex != -1 && !forceFolder) {
+        return true;
+    } else {
+        char tmp[0x200];
+        if (isAbsolute) {
+            strncpy(tmp, filePathBuf, sizeof(tmp)-1);
+            tmp[sizeof(tmp)-1] = 0;
+        } else {
+            snprintf(tmp, sizeof(tmp), "%s%s", gamePath, filePathBuf);
+        }
+        
+        // Use native fopen for thread safety outside mutex
+        FILE *f = fopen(tmp, "rb");
+        if (f) {
+            fseek(f, 0, SEEK_END);
+            *size = (int)ftell(f);
+            fclose(f);
+            strncpy(dest, tmp, 0x1FF);
+            return true;
+        }
+        
+        if (!isAbsolute) {
+            snprintf(tmp, sizeof(tmp), "%s%s", BASE_PATH, filePathBuf);
+            f = fopen(tmp, "rb");
+            if (f) {
+                fseek(f, 0, SEEK_END);
+                *size = (int)ftell(f);
+                fclose(f);
+                strncpy(dest, tmp, 0x1FF);
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// Standalone decryption implementation for background thread
+struct DecryptionState {
+    byte eStringPosA;
+    byte eStringPosB;
+    byte eStringNo;
+    byte eNybbleSwap;
+    byte encryptionStringA[0x10];
+    byte encryptionStringB[0x10];
+    int vFileSize;
+};
+
+static void BackgroundGenerateELoadKeys(uint key1, uint key2, byte *stringA, byte *stringB) {
+    char buffer[0x20];
+    uint hash[0x4];
+    sprintf(buffer, "%u", key1);
+    GenerateMD5FromString(buffer, (int)strlen(buffer), &hash[0], &hash[1], &hash[2], &hash[3]);
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) stringA[i * 4 + j] = (hash[i] >> (8 * (j ^ 3))) & 0xFF;
+    sprintf(buffer, "%u", key2);
+    GenerateMD5FromString(buffer, (int)strlen(buffer), &hash[0], &hash[1], &hash[2], &hash[3]);
+    for (int i = 0; i < 4; ++i)
+        for (int j = 0; j < 4; ++j) stringB[i * 4 + j] = (hash[i] >> (8 * (j ^ 3))) & 0xFF;
+}
+
+static inline int mulUnsignedHigh_BG(uint arg1, int arg2) { return (int)(((unsigned long long)arg1 * (unsigned long long)arg2) >> 32); }
+
+static byte DecryptByte(DecryptionState *s, byte b) {
+    const uint ENC_KEY_2 = 0x24924925;
+    const uint ENC_KEY_1 = 0xAAAAAAAB;
+    byte res = s->encryptionStringB[s->eStringPosB] ^ s->eStringNo ^ b;
+    if (s->eNybbleSwap) res = ((res << 4) + (res >> 4)) & 0xFF;
+    res ^= s->encryptionStringA[s->eStringPosA];
+    s->eStringPosA++;
+    s->eStringPosB++;
+    if (s->eStringPosA <= 0x0F) {
+        if (s->eStringPosB > 0x0C) {
+            s->eStringPosB = 0;
+            s->eNybbleSwap ^= 0x01;
+        }
+    } else if (s->eStringPosB <= 0x08) {
+        s->eStringPosA = 0;
+        s->eNybbleSwap ^= 0x01;
+    } else {
+        s->eStringNo = (s->eStringNo + 2) & 0x7F;
+        int key1 = mulUnsignedHigh_BG(ENC_KEY_1, s->eStringNo);
+        int key2 = mulUnsignedHigh_BG(ENC_KEY_2, s->eStringNo);
+        int temp1 = key2 + (s->eStringNo - key2) / 2;
+        int temp2 = (key1 >> 3) * 3;
+        if (s->eNybbleSwap != 0) {
+            s->eNybbleSwap = 0;
+            s->eStringPosA = s->eStringNo - (temp1 >> 2) * 7;
+            s->eStringPosB = s->eStringNo - (temp2 << 2) + 2;
+        } else {
+            s->eNybbleSwap = 1;
+            s->eStringPosB = s->eStringNo - (temp1 >> 2) * 7;
+            s->eStringPosA = s->eStringNo - (temp2 << 2) + 3;
+        }
+    }
+    return res;
+}
+
+static void ReadDecrypted(void *dest, int size, FILE *f, DecryptionState *s, bool encrypted) {
+    if (size <= 0) return;
+    if (encrypted) {
+        byte stackBuf[512];
+        byte *buf = (size <= 512) ? stackBuf : (byte*)malloc(size);
+        size_t result = fread(buf, 1, size, f);
+        for (size_t i = 0; i < result; i++) {
+            byte d = DecryptByte(s, buf[i]);
+            if (dest) ((byte*)dest)[i] = d;
+        }
+        if (buf != stackBuf) free(buf);
+    } else {
+        if (dest) fread(dest, 1, size, f);
+        else fseek(f, size, SEEK_CUR);
+    }
+}
+
+static void AddRelPath(char relPaths[PRELOAD_FILE_COUNT][0x100], int *count, const char *path) {
+    if (*count >= PRELOAD_FILE_COUNT || !path || !path[0]) return;
+    for (int i = 0; i < *count; i++) {
+        if (strcasecmp(relPaths[i], path) == 0) return;
+    }
+    strncpy(relPaths[(*count)++], path, 0xFF);
+}
+
+static void GetScriptsFromConfig(const char *relPath, char scriptPaths[PRELOAD_FILE_COUNT][0x100], int *count) {
+    char fullPath[0x200];
+    int packID = -1;
+    int offset = 0;
+    int size = 0;
+    bool encrypted = false;
+
+    if (!ThreadedResolvePath(fullPath, relPath, &packID, &offset, &size, &encrypted)) return;
+
+    FILE *f = fopen(fullPath, "rb");
+    if (!f) return;
+    fseek(f, offset, SEEK_SET);
+
+    DecryptionState s;
+    if (encrypted) {
+        s.vFileSize = size;
+        BackgroundGenerateELoadKeys(size, (size >> 1) + 1, s.encryptionStringA, s.encryptionStringB);
+        s.eStringNo = (size & 0x1FC) >> 2;
+        s.eStringPosA = 0;
+        s.eStringPosB = 8;
+        s.eNybbleSwap = 0;
+    }
+
+    byte buf[0x200];
+    if (retro_strcasestr(relPath, "GameConfig.bin")) {
+        ReadDecrypted(buf, 1, f, &s, encrypted); // Title
+        ReadDecrypted(NULL, buf[0], f, &s, encrypted);
+        ReadDecrypted(buf, 1, f, &s, encrypted); // Description
+        ReadDecrypted(NULL, buf[0], f, &s, encrypted);
+        ReadDecrypted(NULL, 0x60 * 3, f, &s, encrypted); // Palette
+        
+        ReadDecrypted(buf, 1, f, &s, encrypted); // Object count
+        int objCount = buf[0];
+        for (int i = 0; i < objCount; i++) {
+            ReadDecrypted(buf, 1, f, &s, encrypted);
+            ReadDecrypted(NULL, buf[0], f, &s, encrypted);
+        }
+        for (int i = 0; i < objCount; i++) {
+            ReadDecrypted(buf, 1, f, &s, encrypted);
+            ReadDecrypted(buf + 1, buf[0], f, &s, encrypted);
+            buf[buf[0] + 1] = 0;
+            if (buf[1] && *count < PRELOAD_FILE_COUNT) {
+                char scriptPath[0x100];
+                snprintf(scriptPath, sizeof(scriptPath), "Data/Scripts/%s.txt", (char*)(buf + 1));
+                AddRelPath(scriptPaths, count, scriptPath);
+            }
+        }
+        // Skip Global Variables
+        ReadDecrypted(buf, 1, f, &s, encrypted);
+        int varCount = buf[0];
+        for (int i = 0; i < varCount; i++) {
+            ReadDecrypted(buf, 1, f, &s, encrypted);
+            ReadDecrypted(NULL, buf[0], f, &s, encrypted);
+            ReadDecrypted(NULL, 4, f, &s, encrypted);
+        }
+    } else {
+        ReadDecrypted(buf, 1, f, &s, encrypted); // Load Globals
+        ReadDecrypted(NULL, 0x20 * 3, f, &s, encrypted); // Palette
+        ReadDecrypted(buf, 1, f, &s, encrypted); // SFX count
+        int sfxCount = buf[0];
+        for (int i = 0; i < sfxCount; i++) {
+            ReadDecrypted(buf, 1, f, &s, encrypted);
+            ReadDecrypted(NULL, buf[0], f, &s, encrypted);
+        }
+        for (int i = 0; i < sfxCount; i++) {
+            ReadDecrypted(buf, 1, f, &s, encrypted);
+            ReadDecrypted(NULL, buf[0], f, &s, encrypted);
+        }
+        
+        ReadDecrypted(buf, 1, f, &s, encrypted); // Object names count
+        int objCount = buf[0];
+        for (int i = 0; i < objCount; i++) {
+            ReadDecrypted(buf, 1, f, &s, encrypted);
+            ReadDecrypted(NULL, buf[0], f, &s, encrypted);
+        }
+        // Read script paths (TxtScripts mode second list)
+        ReadDecrypted(buf, 1, f, &s, encrypted);
+        if (buf[0] == objCount) {
+            for (int i = 0; i < objCount; i++) {
+                ReadDecrypted(buf, 1, f, &s, encrypted);
+                ReadDecrypted(buf + 1, buf[0], f, &s, encrypted);
+                buf[buf[0] + 1] = 0;
+                if (buf[1] && *count < PRELOAD_FILE_COUNT) {
+                    char scriptPath[0x100];
+                    snprintf(scriptPath, sizeof(scriptPath), "Data/Scripts/%s.txt", (char*)(buf + 1));
+                    AddRelPath(scriptPaths, count, scriptPath);
+                }
+            }
+        }
+    }
+    fclose(f);
+}
+
+static void GetGlobalScripts(char scriptPaths[PRELOAD_FILE_COUNT][0x100], int *count) {
+    char globalDir[0x200];
+    snprintf(globalDir, sizeof(globalDir), "%sScripts/Global", gamePath);
+
+    DIR *dir = opendir(globalDir);
+    if (dir) {
+        struct dirent *entry;
+        while ((entry = readdir(dir)) != NULL) {
+            if (entry->d_name[0] == '.') continue;
+            
+            char fullPath[0x400];
+            snprintf(fullPath, sizeof(fullPath), "%s/%s", globalDir, entry->d_name);
+            struct stat st_buf;
+            if (::stat(fullPath, &st_buf) == 0 && S_ISREG(st_buf.st_mode)) {
+                if (retro_strcasestr(entry->d_name, ".txt")) {
+                    char relPath[0x100];
+                    snprintf(relPath, sizeof(relPath), "Data/Scripts/Global/%s", entry->d_name);
+                    AddRelPath(scriptPaths, count, relPath);
+                }
+            }
+        }
+        closedir(dir);
+    }
+
+#if RETRO_USE_MOD_LOADER
+    if (preloadMutexCreated) sys_lwmutex_lock(&preloadMutex, 0);
+    for (int m = 0; m < (int)modList.size(); m++) {
+        if (modList[m].active) {
+            for (std::map<std::string, std::string>::const_iterator it = modList[m].fileMap.begin(); it != modList[m].fileMap.end(); ++it) {
+                const char *p = it->first.c_str();
+                if (retro_strcasestr(p, "scripts/global/") && (retro_strcasestr(p, ".txt"))) {
+                    const char *match = retro_strcasestr(p, "scripts/global/");
+                    char normalizedPath[0x100];
+                    snprintf(normalizedPath, sizeof(normalizedPath), "Data/%s", match);
+                    normalizedPath[0] = 'D'; normalizedPath[5] = 'S'; normalizedPath[13] = 'G';
+                    AddRelPath(scriptPaths, count, normalizedPath);
+                }
+            }
+        }
+    }
+    if (preloadMutexCreated) sys_lwmutex_unlock(&preloadMutex);
+#endif
+}
 #endif
 
 void InitBackgroundLoader()
@@ -72,11 +413,12 @@ void InitBackgroundLoader()
         }
     }
     preloadStatus = PRELOAD_IDLE;
+    preloadDelayTimer = 0;
 }
 
 void StartStagePreload(int listID, int stageID)
 {
-    if (preloadStatus == PRELOAD_LOADING) return;
+    if (preloadStatus == PRELOAD_LOADING || preloadThreadRunning) return;
     
     if (preloadStatus == PRELOAD_READY && preloadListID == listID && preloadStageID == stageID) return;
 
@@ -87,11 +429,6 @@ void StartStagePreload(int listID, int stageID)
     preloadStatus = PRELOAD_LOADING;
 
 #if RETRO_PLATFORM == RETRO_PS3
-    if (preloadThreadRunning) {
-        uint64_t exit_code;
-        sys_ppu_thread_join(preloadThread, &exit_code);
-        preloadThreadRunning = false;
-    }
     preloadThreadRunning = true;
     sys_ppu_thread_create(&preloadThread, PreloadThreadFunc, 0, 1001, 0x40000, SYS_PPU_THREAD_CREATE_JOINABLE, "PreloadThread");
 #else
@@ -100,97 +437,10 @@ void StartStagePreload(int listID, int stageID)
 }
 
 #if RETRO_PLATFORM == RETRO_PS3
-
-// Helper to resolve modded and packed paths using native FILE I/O only
-static bool ThreadedResolvePath(char *dest, const char *filePath, int *packID, int *offset, int *size, bool *encrypted) {
-    if (preloadMutexCreated) sys_lwmutex_lock(&preloadMutex, 0);
-
-    char filePathBuf[0x100];
-    strcpy(filePathBuf, filePath);
-    bool forceFolder = false;
-    
-    *packID = -1;
-    *offset = 0;
-    *size = 0;
-    *encrypted = false;
-
-#if RETRO_USE_MOD_LOADER
-    char pathLower[0x100];
-    int len = (int)strlen(filePath);
-    for (int i = 0; i < len; i++) pathLower[i] = tolower(filePath[i]);
-    pathLower[len] = 0;
-
-    for (int m = 0; m < (int)modList.size(); m++) {
-        if (modList[m].active) {
-            std::map<std::string, std::string>::const_iterator it = modList[m].fileMap.find(pathLower);
-            if (it != modList[m].fileMap.end()) {
-                strcpy(filePathBuf, it->second.c_str());
-                forceFolder = true;
-                break;
-            }
-        }
-    }
-
-    if (forceUseScripts && !forceFolder) {
-        if (strncmp(filePathBuf, "Data/Scripts/", 13) == 0 && (strstr(filePathBuf, ".txt") || strstr(filePathBuf, ".TXT"))) {
-            forceFolder = true;
-            char scriptPath[0x100];
-            strcpy(scriptPath, filePathBuf + 5); // Skip "Data/"
-            strcpy(filePathBuf, scriptPath);
-        }
-    }
-#endif
-
-    int fileIndex = -1;
-    if (!forceFolder) {
-        char pathLower2[0x100];
-        int len2 = (int)strlen(filePath);
-        for (int i = 0; i < len2; i++) pathLower2[i] = tolower(filePath[i]);
-        pathLower2[len2] = 0;
-        fileIndex = CheckFileInfo(pathLower2);
-    }
-
-    if (fileIndex != -1 && !forceFolder) {
-        *packID = rsdkContainer.files[fileIndex].packID;
-        *offset = rsdkContainer.files[fileIndex].offset;
-        *size = rsdkContainer.files[fileIndex].filesize;
-        *encrypted = rsdkContainer.files[fileIndex].encrypted;
-        strcpy(dest, rsdkContainer.packNames[*packID]);
-        if (preloadMutexCreated) sys_lwmutex_unlock(&preloadMutex);
-        return true;
-    } else {
-        char tmp[0x200];
-        sprintf(tmp, "%s%s", gamePath, filePathBuf);
-        // Use native fopen for thread safety
-        FILE *f = fopen(tmp, "rb");
-        if (f) {
-            fseek(f, 0, SEEK_END);
-            *size = ftell(f);
-            fclose(f);
-            strcpy(dest, tmp);
-            if (preloadMutexCreated) sys_lwmutex_unlock(&preloadMutex);
-            return true;
-        }
-        
-        sprintf(tmp, "%s%s", BASE_PATH, filePathBuf);
-        f = fopen(tmp, "rb");
-        if (f) {
-            fseek(f, 0, SEEK_END);
-            *size = ftell(f);
-            fclose(f);
-            strcpy(dest, tmp);
-            if (preloadMutexCreated) sys_lwmutex_unlock(&preloadMutex);
-            return true;
-        }
-    }
-    if (preloadMutexCreated) sys_lwmutex_unlock(&preloadMutex);
-    return false;
-}
-
 void PreloadThreadFunc(uint64_t arg)
 {
     (void)arg;
-    if (!preloadedData) { preloadStatus = PRELOAD_IDLE; sys_ppu_thread_exit(0); }
+    if (!preloadedData) { preloadStatus = PRELOAD_IDLE; preloadThreadRunning = false; sys_ppu_thread_exit(0); }
 
     char folder[0x100];
     char stageID[0x10];
@@ -210,51 +460,34 @@ void PreloadThreadFunc(uint64_t arg)
     for (int i=0; i<PRELOAD_FILE_COUNT; i++) relPaths[i][0] = 0;
 
     int pathIdx = 0;
-    // Sonic 1 folder name mappings
-    const char *folderMap[] = { "Zone01", "GHZ", "Zone02", "MZ", "Zone03", "SYZ", "Zone04", "LZ", "Zone05", "SLZ", "Zone06", "SBZ" };
-
     if (forceUseScripts) {
-        sprintf(relPaths[pathIdx++], "Data/Stages/%s/StageConfig.bin", folder);
-        sprintf(relPaths[pathIdx++], "Data/Stages/%s/128x128Tiles.bin", folder);
-        sprintf(relPaths[pathIdx++], "Data/Stages/%s/CollisionMasks.bin", folder);
-        sprintf(relPaths[pathIdx++], "Data/Stages/%s/Act%s.bin", folder, stageID);
-        sprintf(relPaths[pathIdx++], "Data/Stages/%s/Backgrounds.bin", folder);
-        sprintf(relPaths[pathIdx++], "Data/Stages/%s/16x16Tiles.gif", folder);
-        sprintf(relPaths[pathIdx++], "Scripts/Global/StageSetup.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Players/PlayerObject.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/HUD.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/TitleCard.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/Ring.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/Monitor.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/ActFinish.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/RingSparkle.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/Explosion.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/AnimalPrison.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/SignPost.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/LampPost.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/DeathEvent.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/Invincibility.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/BlueShield.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Global/MusicEvent.txt");
-        sprintf(relPaths[pathIdx++], "Scripts/Players/TailsObject.txt");
+        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/StageConfig.bin", folder);
+        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/128x128Tiles.bin", folder);
+        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/CollisionMasks.bin", folder);
+        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Act%s.bin", folder, stageID);
+        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Backgrounds.bin", folder);
+        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/16x16Tiles.gif", folder);
 
-        // Try mapping ZoneXX to standard Sonic 1 directories for Setup.txt
-        for (int m = 0; m < 12; m += 2) {
-            if (strcasecmp(folder, folderMap[m]) == 0) {
-                sprintf(relPaths[pathIdx++], "Scripts/%s/%sSetup.txt", folderMap[m+1], folderMap[m+1]);
-                break;
-            }
-        }
+        // Preload all global scripts
+        GetGlobalScripts(relPaths, &pathIdx);
+
+        // Preload scripts from GameConfig.bin (Global scripts)
+        GetScriptsFromConfig("Data/Game/GameConfig.bin", relPaths, &pathIdx);
+
+        // Preload scripts from StageConfig.bin (Stage-specific scripts)
+        char stageConfigPath[0x100];
+        snprintf(stageConfigPath, sizeof(stageConfigPath), "Data/Stages/%s/StageConfig.bin", folder);
+        GetScriptsFromConfig(stageConfigPath, relPaths, &pathIdx);
     }
     else {
-        sprintf(relPaths[0], "Data/Stages/%s/StageConfig.bin", folder);
-        sprintf(relPaths[1], "Bytecode/%s.bin", folder);
-        sprintf(relPaths[2], "Data/Stages/%s/128x128Tiles.bin", folder);
-        sprintf(relPaths[3], "Data/Stages/%s/CollisionMasks.bin", folder);
-        sprintf(relPaths[4], "Data/Stages/%s/Act%s.bin", folder, stageID);
-        sprintf(relPaths[5], "Data/Stages/%s/Backgrounds.bin", folder);
-        sprintf(relPaths[6], "Data/Stages/%s/16x16Tiles.gif", folder);
-        sprintf(relPaths[7], "Bytecode/GlobalCode.bin");
+        snprintf(relPaths[0], 0x100, "Data/Stages/%s/StageConfig.bin", folder);
+        snprintf(relPaths[1], 0x100, "Bytecode/%s.bin", folder);
+        snprintf(relPaths[2], 0x100, "Data/Stages/%s/128x128Tiles.bin", folder);
+        snprintf(relPaths[3], 0x100, "Data/Stages/%s/CollisionMasks.bin", folder);
+        snprintf(relPaths[4], 0x100, "Data/Stages/%s/Act%s.bin", folder, stageID);
+        snprintf(relPaths[5], 0x100, "Data/Stages/%s/Backgrounds.bin", folder);
+        snprintf(relPaths[6], 0x100, "Data/Stages/%s/16x16Tiles.gif", folder);
+        snprintf(relPaths[7], 0x100, "Bytecode/GlobalCode.bin");
         relPaths[8][0] = 0;
     }
 
@@ -283,12 +516,13 @@ void PreloadThreadFunc(uint64_t arg)
                         fread(ptr, 1, toRead, f);
                         ptr += toRead;
                         remaining -= toRead;
-                        sys_timer_usleep(5000); // 5ms delay per block
+                        sys_timer_usleep(2000); // 2ms delay per block
                     }
 
                     preloadedData->files[i].size = (int)size;
                     preloadedData->files[i].encrypted = encrypted;
-                    strcpy(preloadedData->files[i].fileName, relPaths[i]);
+                    strncpy(preloadedData->files[i].fileName, relPaths[i], 0xFF);
+                    preloadedData->files[i].fileName[0xFF] = 0;
                     PrintLog("Threaded Preload successful: %s (%d bytes)", relPaths[i], preloadedData->files[i].size);
                 }
                 fclose(f);
@@ -298,11 +532,12 @@ void PreloadThreadFunc(uint64_t arg)
         } else {
             PrintLog("Threaded Preload FAILED to resolve: %s", relPaths[i]);
         }
-        sys_timer_usleep(50000); // 50ms delay between files
+        sys_timer_usleep(20000); // 20ms delay between files
     }
 
     PrintLog("Background Loading READY for %s - %s", stageListNames[preloadListID], stageList[preloadListID][preloadStageID].name);
     preloadStatus = PRELOAD_READY;
+    preloadThreadRunning = false;
     sys_ppu_thread_exit(0);
 }
 #endif
@@ -344,10 +579,7 @@ bool IsScenePreloaded(int listID, int stageID)
 {
 #if RETRO_PLATFORM == RETRO_PS3
     if (preloadThreadRunning) {
-        if (preloadStatus == PRELOAD_LOADING) return false;
-        uint64_t exit_code;
-        sys_ppu_thread_join(preloadThread, &exit_code);
-        preloadThreadRunning = false;
+        return false;
     }
 #endif
     return (preloadStatus == PRELOAD_READY && preloadListID == listID && preloadStageID == stageID);
@@ -358,7 +590,12 @@ char lastFolder[0x100] = "";
 
 void CheckStagePreload()
 {
-    if (preloadStatus == PRELOAD_LOADING) return;
+    if (preloadStatus == PRELOAD_LOADING || Engine.gameMode == ENGINE_DEVMENU) return;
+
+    if (preloadDelayTimer > 0) {
+        preloadDelayTimer--;
+        return;
+    }
 
     bool isTitle = false;
     const char *currentFolder = "";
