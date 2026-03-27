@@ -673,21 +673,37 @@ void LoadStageFiles(void)
                 snprintf(globalBytecodePath, sizeof(globalBytecodePath), "Bytecode/GlobalCode.bin");
 
             bool bytecodeExists  = false;
-            FileInfo bytecodeInfo;
-            GetFileInfo(&bytecodeInfo);
-            CloseFile();
-            if (LoadFile(globalBytecodePath, &info)) {
+            char fullPath[0x200];
+#if RETRO_PLATFORM == RETRO_PS3 || RETRO_PLATFORM == RETRO_ANDROID || RETRO_PLATFORM == RETRO_OSX
+            snprintf(fullPath, sizeof(fullPath), "%s%s", gamePath, globalBytecodePath);
+#else
+            snprintf(fullPath, sizeof(fullPath), "%s", globalBytecodePath);
+#endif
+            FileIO *f_test = fOpen(fullPath, "rb");
+            if (f_test) {
+                fClose(f_test);
                 bytecodeExists = true;
-                CloseFile();
             }
-            SetFileInfo(&bytecodeInfo);
 
             if (bytecodeExists) {
+                for (byte i = 0; i < globalObjectCount; ++i) {
+                    FileRead(&fileBuffer2, 1);
+                    FileRead(strBuffer, fileBuffer2);
+                    strBuffer[fileBuffer2] = 0;
+                }
+
                 GetFileInfo(&infoStore);
                 CloseFile();
-                int loadedScriptCount = LoadBytecode(4, scriptID, globalBytecodePath, 0);
-                scriptID += loadedScriptCount;
+                int totalLoaded = LoadBytecode(4, 1, globalBytecodePath, 0);
+                scriptID = 1 + totalLoaded;
                 SetFileInfo(&infoStore);
+
+#if RETRO_USE_MOD_LOADER
+                for (byte i = 0; i < modObjCount && loadGlobalScripts; ++i) {
+                    SetObjectTypeName(modTypeNames[i], 1 + globalObjectCount + i);
+                }
+#endif
+                PrintLog("Loaded global bytecode, advanced config pointer");
             }
             else {
                 bool parsedGlobalTxt = false;
@@ -872,14 +888,17 @@ void LoadStageFiles(void)
                 default: break;
             }
             bool stageBytecodeExists = false;
-            FileInfo stageBytecodeInfo;
-            GetFileInfo(&stageBytecodeInfo);
-            CloseFile();
-            if (LoadFile(stageBytecodePath, &info)) {
+            char fullStagePath[0x200];
+#if RETRO_PLATFORM == RETRO_PS3 || RETRO_PLATFORM == RETRO_ANDROID || RETRO_PLATFORM == RETRO_OSX
+            snprintf(fullStagePath, sizeof(fullStagePath), "%s%s", gamePath, stageBytecodePath);
+#else
+            snprintf(fullStagePath, sizeof(fullStagePath), "%s", stageBytecodePath);
+#endif
+            FileIO *fs_test = fOpen(fullStagePath, "rb");
+            if (fs_test) {
+                fClose(fs_test);
                 stageBytecodeExists = true;
-                CloseFile();
             }
-            SetFileInfo(&stageBytecodeInfo);
 
             if (stageBytecodeExists) {
                 for (byte i = 0; i < stageObjectCount; ++i) {

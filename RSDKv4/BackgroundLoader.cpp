@@ -531,48 +531,70 @@ void PreloadThreadFunc(uint64_t arg)
     for (int i=0; i<PRELOAD_FILE_COUNT; i++) relPaths[i][0] = 0;
 
     int pathIdx = 0;
-    if (forceUseScripts) {
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/StageConfig.bin", folder);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/128x128Tiles.bin", folder);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/CollisionMasks.bin", folder);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Act%s.bin", folder, stageID);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Backgrounds.bin", folder);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/16x16Tiles.gif", folder);
+    char modHash[33];
+    GetModHash(modHash);
 
-        // Preload all global scripts
-        GetGlobalScripts(relPaths, &pathIdx);
+    // Common files
+    snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/StageConfig.bin", folder);
+    snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/128x128Tiles.bin", folder);
+    snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/CollisionMasks.bin", folder);
+    snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Act%s.bin", folder, stageID);
+    snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Backgrounds.bin", folder);
+    snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/16x16Tiles.gif", folder);
 
-        // Preload scripts from GameConfig.bin (Global scripts)
-        GetScriptsFromConfig("Data/Game/GameConfig.bin", relPaths, &pathIdx);
+    // Check for Stage Bytecode
+    char stageBytecodePath[0x100];
+    if (modHash[0])
+        snprintf(stageBytecodePath, sizeof(stageBytecodePath), "Bytecode/%s_%s.bin", folder, modHash);
+    else
+        snprintf(stageBytecodePath, sizeof(stageBytecodePath), "Bytecode/%s.bin", folder);
 
+    char fullPath_s[0x200];
+    snprintf(fullPath_s, sizeof(fullPath_s), "%s%s", gamePath, stageBytecodePath);
+    FILE *f_test_s = fopen(fullPath_s, "rb");
+    bool sBCExists = false;
+    if (f_test_s) {
+        fclose(f_test_s);
+        sBCExists = true;
+    }
+
+    if (forceUseScripts && !sBCExists) {
         // Preload scripts from StageConfig.bin (Stage-specific scripts)
         char stageConfigPath[0x100];
         snprintf(stageConfigPath, sizeof(stageConfigPath), "Data/Stages/%s/StageConfig.bin", folder);
         GetScriptsFromConfig(stageConfigPath, relPaths, &pathIdx);
     }
     else {
-        char modHash[33];
-        GetModHash(modHash);
-
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/StageConfig.bin", folder);
-        if (modHash[0])
-            snprintf(relPaths[pathIdx++], 0x100, "Bytecode/%s_%s.bin", folder, modHash);
-        else
-            snprintf(relPaths[pathIdx++], 0x100, "Bytecode/%s.bin", folder);
-
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/128x128Tiles.bin", folder);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/CollisionMasks.bin", folder);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Act%s.bin", folder, stageID);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/Backgrounds.bin", folder);
-        snprintf(relPaths[pathIdx++], 0x100, "Data/Stages/%s/16x16Tiles.gif", folder);
-        
-        if (modHash[0])
-            snprintf(relPaths[pathIdx++], 0x100, "Bytecode/GlobalCode_%s.bin", modHash);
-        else
-            snprintf(relPaths[pathIdx++], 0x100, "Bytecode/GlobalCode.bin");
-
-        relPaths[pathIdx][0] = 0;
+        snprintf(relPaths[pathIdx++], 0x100, "%s", stageBytecodePath);
     }
+
+    // Check for Global Bytecode
+    char globalBytecodePath[0x100];
+    if (modHash[0])
+        snprintf(globalBytecodePath, sizeof(globalBytecodePath), "Bytecode/GlobalCode_%s.bin", modHash);
+    else
+        snprintf(globalBytecodePath, sizeof(globalBytecodePath), "Bytecode/GlobalCode.bin");
+
+    char fullPath_g[0x200];
+    snprintf(fullPath_g, sizeof(fullPath_g), "%s%s", gamePath, globalBytecodePath);
+    FILE *f_test_g = fopen(fullPath_g, "rb");
+    bool gBCExists = false;
+    if (f_test_g) {
+        fclose(f_test_g);
+        gBCExists = true;
+    }
+
+    if (forceUseScripts && !gBCExists) {
+        // Preload all global scripts
+        GetGlobalScripts(relPaths, &pathIdx);
+        // Preload scripts from GameConfig.bin (Global scripts)
+        GetScriptsFromConfig("Data/Game/GameConfig.bin", relPaths, &pathIdx);
+    }
+    else {
+        snprintf(relPaths[pathIdx++], 0x100, "%s", globalBytecodePath);
+    }
+
+    relPaths[pathIdx][0] = 0;
 
     for (int i = 0; i < PRELOAD_FILE_COUNT; i++) {
         if (relPaths[i][0] == 0) continue;

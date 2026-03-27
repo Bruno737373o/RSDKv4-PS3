@@ -3512,9 +3512,9 @@ void SaveBytecode(const char *filePath, int scriptID, int scriptCount, int start
 {
     char fullPath[0x200];
 #if RETRO_PLATFORM == RETRO_PS3 || RETRO_PLATFORM == RETRO_ANDROID || RETRO_PLATFORM == RETRO_OSX
-    sprintf(fullPath, "%s%s", gamePath, filePath);
+    snprintf(fullPath, sizeof(fullPath), "%s%s", gamePath, filePath);
 #else
-    sprintf(fullPath, "%s", filePath);
+    snprintf(fullPath, sizeof(fullPath), "%s", filePath);
 #endif
 
     // Ensure directory exists
@@ -3534,6 +3534,8 @@ void SaveBytecode(const char *filePath, int scriptID, int scriptCount, int start
 #else
     mkdir(dirPath, 0777);
 #endif
+
+    PrintLog("Attempting to save bytecode to: %s", fullPath);
 
     FileIO *f = fOpen(fullPath, "wb");
     if (!f) {

@@ -676,6 +676,7 @@ void SetFileInfo(FileInfo *fileInfo)
         // Refill the buffer from memory
         FillFileBuffer();
         bufferPosition = fileInfo->bufferPosition;
+        PrintLog("Restored FileInfo from memory: %s", fileName);
         return;
     }
 
