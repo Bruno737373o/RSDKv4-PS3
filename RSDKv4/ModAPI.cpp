@@ -86,6 +86,8 @@ fs::path resolvePath(fs::path given)
 void InitMods()
 {
     modList.clear();
+    modObjCount = 0;
+    memset(modScriptFlags, 0, sizeof(modScriptFlags));
     forceUseScripts    = forceUseScripts_Config;
     skipStartMenu      = skipStartMenu_Config;
     disableFocusPause  = disableFocusPause_Config;
@@ -244,8 +246,6 @@ void InitMods()
     ReadUserdata();
 
     // Reset mod script metadata to prevent contamination between loads
-    modObjCount = 0;
-    memset(modScriptFlags, 0, sizeof(modScriptFlags));
 }
 bool LoadMod(ModInfo *info, std::string modsPath, std::string folder, bool active)
 {
@@ -758,6 +758,9 @@ void SaveMods()
 void RefreshEngine()
 {
     for (int m = 0; m < (int)modList.size(); ++m) ScanModFolder(&modList[m]);
+
+    modObjCount = 0;
+    memset(modScriptFlags, 0, sizeof(modScriptFlags));
 
     // Reload entire engine
     Engine.LoadGameConfig("Data/Game/GameConfig.bin");

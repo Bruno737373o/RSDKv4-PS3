@@ -261,6 +261,10 @@ inline void Copy16x16Tile(ushort dest, ushort src)
 
 void SetLayerDeformation(int selectedDef, int waveLength, int waveWidth, int waveType, int YPos, int waveSize);
 
+#if RETRO_USE_MOD_LOADER
+extern int globalObjCount;
+#endif
+
 void SetPlayerScreenPosition(Entity *target);
 void SetPlayerScreenPositionCDStyle(Entity *target);
 void SetPlayerHLockedScreenPosition(Entity *target);

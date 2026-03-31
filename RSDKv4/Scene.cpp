@@ -621,19 +621,21 @@ void LoadStageFiles(void)
     char strBuffer[0x100];
 
     StopAllSfx();
+
+#if !RETRO_USE_MOD_LOADER
+    bool loadGlobalScripts = false;
+#endif
+
     if (!CheckCurrentStageFolder(stageListPosition)) {
         PrintLog("Loading Scene %s - %s", stageListNames[activeStageList], stageList[activeStageList][stageListPosition].name);
         ReleaseStageSfx();
         ClearScriptData();
+#if RETRO_USE_MOD_LOADER
+        loadGlobalScripts = false;
+#endif
         // Mass clear sprites
         for (int i = 0; i < SURFACE_COUNT; i++) StrCopy(gfxSurface[i].fileName, "");
         gfxDataPosition = 0;
-
-#if RETRO_USE_MOD_LOADER
-        loadGlobalScripts = false;
-#else
-        bool loadGlobalScripts = false;
-#endif
         if (LoadStageFile("StageConfig.bin", stageListPosition, &info)) {
             byte buf = 0;
             FileRead(&buf, 1);
@@ -655,6 +657,9 @@ void LoadStageFiles(void)
 
             byte globalObjectCount = 0;
             FileRead(&globalObjectCount, 1);
+#if RETRO_USE_MOD_LOADER
+            globalObjCount = globalObjectCount;
+#endif
             for (byte i = 0; i < globalObjectCount; ++i) {
                 FileRead(&fileBuffer2, 1);
                 FileRead(strBuffer, fileBuffer2);
@@ -1118,12 +1123,6 @@ void LoadActLayout()
             PrintLog("WARNING: object count %d exceeds the object limit", objectCount);
 #endif
 
-#if RETRO_USE_MOD_LOADER
-        int offsetCount = 0;
-        for (int m = 0; m < modObjCount; ++m)
-            if (modScriptFlags[m])
-                ++offsetCount;
-#endif
         Entity *object = &objectEntityList[32];
         for (int i = 0; i < objectCount; ++i) {
             FileRead(fileBuffer, 2);
@@ -1133,8 +1132,8 @@ void LoadActLayout()
             object->type = fileBuffer[0];
 
 #if RETRO_USE_MOD_LOADER
-            if (loadGlobalScripts && offsetCount && object->type > globalObjCount)
-                object->type += offsetCount; // offset it by our mod count
+            if (loadGlobalScripts && modObjCount && object->type > globalObjCount)
+                object->type += modObjCount; // offset it by our mod count
 #endif
 
             FileRead(fileBuffer, 1);

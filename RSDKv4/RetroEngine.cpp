@@ -1289,6 +1289,9 @@ bool RetroEngine::LoadGameConfig(const char *filePath)
     globalVariablesCount = 0;
 #if RETRO_USE_MOD_LOADER
     playerCount = 0;
+    modObjCount = 0;
+    globalObjCount = 0;
+    memset(modScriptFlags, 0, sizeof(modScriptFlags));
 #endif
 
     bool loaded = LoadFile(filePath, &info);
@@ -1310,6 +1313,9 @@ bool RetroEngine::LoadGameConfig(const char *filePath)
         // Read Obect Names
         byte objectCount = 0;
         FileRead(&objectCount, 1);
+#if RETRO_USE_MOD_LOADER
+        globalObjCount = objectCount;
+#endif
         for (byte o = 0; o < objectCount; ++o) {
             FileRead(&fileBuffer, 1);
             FileRead(&strBuffer, fileBuffer);
