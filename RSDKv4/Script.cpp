@@ -3272,168 +3272,115 @@ int LoadBytecode(int stageListID, int scriptID, const char *customPath, int star
         int *scriptCodePtr = &scriptCode[scriptCodePos];
         int *jumpTablePtr  = &jumpTable[jumpTablePos];
 
-        FileRead(&fileBuffer, 1);
-        int scriptCodeSize = fileBuffer;
-        FileRead(&fileBuffer, 1);
-        scriptCodeSize |= fileBuffer << 8;
-        FileRead(&fileBuffer, 1);
-        scriptCodeSize |= fileBuffer << 16;
-        FileRead(&fileBuffer, 1);
-        scriptCodeSize |= fileBuffer << 24;
+        int scriptCodeSize = 0;
+        FileRead(&scriptCodeSize, 4);
+        SWAP_ENDIAN(scriptCodeSize);
 
         while (scriptCodeSize > 0) {
             FileRead(&fileBuffer, 1);
-            int blockSize = fileBuffer & 0x7F;
-            if (fileBuffer >= 0x80) {
-                while (blockSize > 0) {
-                    FileRead(&fileBuffer, 1);
-                    *scriptCodePtr = fileBuffer;
-                    FileRead(&fileBuffer, 1);
-                    *scriptCodePtr |= fileBuffer << 8;
-                    FileRead(&fileBuffer, 1);
-                    *scriptCodePtr |= fileBuffer << 16;
-                    FileRead(&fileBuffer, 1);
-                    *scriptCodePtr |= fileBuffer << 24;
-
-                    ++scriptCodePtr;
-                    ++scriptCodePos;
-                    --scriptCodeSize;
-                    --blockSize;
-                }
+            int blockSize = fileBuffer & 0x3F;
+            if ((fileBuffer & 0xC0) == 0xC0) { // 32-bit
+                FileRead(scriptCodePtr, blockSize * 4);
+#if RETRO_IS_BIG_ENDIAN
+                for (int i = 0; i < blockSize; ++i) SWAP_ENDIAN(scriptCodePtr[i]);
+#endif
+                scriptCodePtr += blockSize;
+                scriptCodePos += blockSize;
+                scriptCodeSize -= blockSize;
             }
-            else {
-                while (blockSize > 0) {
-                    FileRead(&fileBuffer, 1);
-                    *scriptCodePtr = fileBuffer;
-
-                    ++scriptCodePtr;
-                    ++scriptCodePos;
-                    --scriptCodeSize;
-                    --blockSize;
+            else if (fileBuffer & 0x80) { // 16-bit
+                for (int i = 0; i < blockSize; ++i) {
+                    short val = 0;
+                    FileRead(&val, 2);
+                    SWAP_ENDIAN(val);
+                    *scriptCodePtr++ = val;
                 }
+                scriptCodePos += blockSize;
+                scriptCodeSize -= blockSize;
+            }
+            else { // 8-bit
+                blockSize = fileBuffer & 0x7F;
+                for (int i = 0; i < blockSize; ++i) {
+                    byte val = 0;
+                    FileRead(&val, 1);
+                    *scriptCodePtr++ = val;
+                }
+                scriptCodePos += blockSize;
+                scriptCodeSize -= blockSize;
             }
         }
 
-        FileRead(&fileBuffer, 1);
-        int jumpTableSize = fileBuffer;
-        FileRead(&fileBuffer, 1);
-        jumpTableSize |= fileBuffer << 8;
-        FileRead(&fileBuffer, 1);
-        jumpTableSize |= fileBuffer << 16;
-        FileRead(&fileBuffer, 1);
-        jumpTableSize |= fileBuffer << 24;
+        int jumpTableSize = 0;
+        FileRead(&jumpTableSize, 4);
+        SWAP_ENDIAN(jumpTableSize);
 
         while (jumpTableSize > 0) {
             FileRead(&fileBuffer, 1);
-            int blockSize = fileBuffer & 0x7F;
-
-            if (fileBuffer >= 0x80) {
-                while (blockSize > 0) {
-                    FileRead(&fileBuffer, 1);
-                    *jumpTablePtr = fileBuffer;
-                    FileRead(&fileBuffer, 1);
-                    *jumpTablePtr |= fileBuffer << 8;
-                    FileRead(&fileBuffer, 1);
-                    *jumpTablePtr |= fileBuffer << 16;
-                    FileRead(&fileBuffer, 1);
-                    *jumpTablePtr |= fileBuffer << 24;
-
-                    ++jumpTablePtr;
-                    ++jumpTablePos;
-                    --jumpTableSize;
-                    --blockSize;
-                }
+            int blockSize = fileBuffer & 0x3F;
+            if ((fileBuffer & 0xC0) == 0xC0) { // 32-bit
+                FileRead(jumpTablePtr, blockSize * 4);
+#if RETRO_IS_BIG_ENDIAN
+                for (int i = 0; i < blockSize; ++i) SWAP_ENDIAN(jumpTablePtr[i]);
+#endif
+                jumpTablePtr += blockSize;
+                jumpTablePos += blockSize;
+                jumpTableSize -= blockSize;
             }
-            else {
-                while (blockSize > 0) {
-                    FileRead(&fileBuffer, 1);
-                    *jumpTablePtr = fileBuffer;
-
-                    ++jumpTablePtr;
-                    ++jumpTablePos;
-                    --jumpTableSize;
-                    --blockSize;
+            else if (fileBuffer & 0x80) { // 16-bit
+                for (int i = 0; i < blockSize; ++i) {
+                    short val = 0;
+                    FileRead(&val, 2);
+                    SWAP_ENDIAN(val);
+                    *jumpTablePtr++ = val;
                 }
+                jumpTablePos += blockSize;
+                jumpTableSize -= blockSize;
+            }
+            else { // 8-bit
+                blockSize = fileBuffer & 0x7F;
+                for (int i = 0; i < blockSize; ++i) {
+                    byte val = 0;
+                    FileRead(&val, 1);
+                    *jumpTablePtr++ = val;
+                }
+                jumpTablePos += blockSize;
+                jumpTableSize -= blockSize;
             }
         }
 
-        FileRead(&fileBuffer, 1);
-        int scriptCount = fileBuffer;
-        FileRead(&fileBuffer, 1);
-        scriptCount |= fileBuffer << 8;
+        short scriptCount = 0;
+        FileRead(&scriptCount, 2);
+        SWAP_ENDIAN(scriptCount);
 
         for (int s = 0; s < scriptCount; ++s) {
             ObjectScript *script = &objectScriptList[scriptID + s];
-
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.scriptCodePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.scriptCodePtr |= fileBuffer << 8;
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.scriptCodePtr |= fileBuffer << 16;
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.scriptCodePtr |= fileBuffer << 24;
+            FileRead(&script->eventUpdate.scriptCodePtr, 4);
+            SWAP_ENDIAN(script->eventUpdate.scriptCodePtr);
             script->eventUpdate.scriptCodePtr += scriptCodeOffset;
-
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.scriptCodePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.scriptCodePtr |= fileBuffer << 8;
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.scriptCodePtr |= fileBuffer << 16;
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.scriptCodePtr |= fileBuffer << 24;
+            FileRead(&script->eventDraw.scriptCodePtr, 4);
+            SWAP_ENDIAN(script->eventDraw.scriptCodePtr);
             script->eventDraw.scriptCodePtr += scriptCodeOffset;
-
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.scriptCodePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.scriptCodePtr |= (fileBuffer << 8);
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.scriptCodePtr |= (fileBuffer << 16);
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.scriptCodePtr |= fileBuffer << 24;
+            FileRead(&script->eventStartup.scriptCodePtr, 4);
+            SWAP_ENDIAN(script->eventStartup.scriptCodePtr);
             script->eventStartup.scriptCodePtr += scriptCodeOffset;
         }
 
         for (int s = 0; s < scriptCount; ++s) {
             ObjectScript *script = &objectScriptList[scriptID + s];
-
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.jumpTablePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.jumpTablePtr |= fileBuffer << 8;
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.jumpTablePtr |= fileBuffer << 16;
-            FileRead(&fileBuffer, 1);
-            script->eventUpdate.jumpTablePtr |= fileBuffer << 24;
+            FileRead(&script->eventUpdate.jumpTablePtr, 4);
+            SWAP_ENDIAN(script->eventUpdate.jumpTablePtr);
             script->eventUpdate.jumpTablePtr += jumpTableOffset;
-
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.jumpTablePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.jumpTablePtr |= fileBuffer << 8;
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.jumpTablePtr |= fileBuffer << 16;
-            FileRead(&fileBuffer, 1);
-            script->eventDraw.jumpTablePtr |= fileBuffer << 24;
+            FileRead(&script->eventDraw.jumpTablePtr, 4);
+            SWAP_ENDIAN(script->eventDraw.jumpTablePtr);
             script->eventDraw.jumpTablePtr += jumpTableOffset;
-
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.jumpTablePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.jumpTablePtr |= fileBuffer << 8;
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.jumpTablePtr |= fileBuffer << 16;
-            FileRead(&fileBuffer, 1);
-            script->eventStartup.jumpTablePtr |= fileBuffer << 24;
+            FileRead(&script->eventStartup.jumpTablePtr, 4);
+            SWAP_ENDIAN(script->eventStartup.jumpTablePtr);
             script->eventStartup.jumpTablePtr += jumpTableOffset;
         }
 
-        FileRead(&fileBuffer, 1);
-        int functionCount = fileBuffer;
-        FileRead(&fileBuffer, 1);
-        functionCount |= fileBuffer << 8;
+        short functionCount = 0;
+        FileRead(&functionCount, 2);
+        SWAP_ENDIAN(functionCount);
 
 #if RETRO_USE_COMPILER
         scriptFunctionCount = startFuncID + functionCount;
@@ -3441,62 +3388,74 @@ int LoadBytecode(int stageListID, int scriptID, const char *customPath, int star
 
         for (int f = 0; f < functionCount; ++f) {
             ScriptFunction *function = &scriptFunctionList[startFuncID + f];
-
-            FileRead(&fileBuffer, 1);
-            function->ptr.scriptCodePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            function->ptr.scriptCodePtr |= fileBuffer << 8;
-            FileRead(&fileBuffer, 1);
-            function->ptr.scriptCodePtr |= fileBuffer << 16;
-            FileRead(&fileBuffer, 1);
-            function->ptr.scriptCodePtr |= fileBuffer << 24;
+            FileRead(&function->ptr.scriptCodePtr, 4);
+            SWAP_ENDIAN(function->ptr.scriptCodePtr);
             function->ptr.scriptCodePtr += scriptCodeOffset;
         }
 
         for (int f = 0; f < functionCount; ++f) {
             ScriptFunction *function = &scriptFunctionList[startFuncID + f];
-
-            FileRead(&fileBuffer, 1);
-            function->ptr.jumpTablePtr = fileBuffer;
-            FileRead(&fileBuffer, 1);
-            function->ptr.jumpTablePtr |= fileBuffer << 8;
-            FileRead(&fileBuffer, 1);
-            function->ptr.jumpTablePtr |= fileBuffer << 16;
-            FileRead(&fileBuffer, 1);
-            function->ptr.jumpTablePtr |= fileBuffer << 24;
+            FileRead(&function->ptr.jumpTablePtr, 4);
+            SWAP_ENDIAN(function->ptr.jumpTablePtr);
             function->ptr.jumpTablePtr += jumpTableOffset;
         }
 
         // Load aliases (symbols)
-        FileRead(&fileBuffer, 1);
-        int aliasCount = fileBuffer;
-        FileRead(&fileBuffer, 1);
-        aliasCount |= fileBuffer << 8;
+        short aliasCount = 0;
+        FileRead(&aliasCount, 2);
+        SWAP_ENDIAN(aliasCount);
 
         for (int a = 0; a < aliasCount; ++a) {
             if (scriptValueListCount < SCRIPT_VAR_COUNT) {
                 ScriptVariableInfo *alias = &scriptValueList[scriptValueListCount];
                 FileRead(&alias->type, 1);
                 FileRead(&alias->access, 1);
-                FileRead(alias->name, 0x20);
-                FileRead(alias->value, 0x20);
+                byte len = 0;
+                FileRead(&len, 1);
+                int readLen = len > 0x1F ? 0x1F : len;
+                FileRead(alias->name, readLen);
+                alias->name[readLen] = 0;
+                if (len > readLen)
+                    FileSkip(len - readLen);
+
+                FileRead(&len, 1);
+                readLen = len > 0x1F ? 0x1F : len;
+                FileRead(alias->value, readLen);
+                alias->value[readLen] = 0;
+                if (len > readLen)
+                    FileSkip(len - readLen);
+
                 AddAliasToHash(scriptValueListCount);
                 scriptValueListCount++;
             }
             else {
-                FileSkip(1 + 1 + 0x20 + 0x20);
+                byte len = 0;
+                FileSkip(2); // type, access
+                FileRead(&len, 1);
+                FileSkip(len);
+                FileRead(&len, 1);
+                FileSkip(len);
             }
         }
 
         // Load function metadata
-        FileRead(&fileBuffer, 1);
-        int funcMetaCount = fileBuffer;
-        FileRead(&fileBuffer, 1);
-        funcMetaCount |= fileBuffer << 8;
+        short funcMetaCount = 0;
+        FileRead(&funcMetaCount, 2);
+        SWAP_ENDIAN(funcMetaCount);
 
         for (int f = 0; f < funcMetaCount; ++f) {
             FileRead(&scriptFunctionList[startFuncID + f].access, 1);
-            FileRead(scriptFunctionList[startFuncID + f].name, 0x20);
+            byte len = 0;
+            FileRead(&len, 1);
+#if RETRO_REV03
+            int readLen = len > 0x2F ? 0x2F : len;
+#else
+            int readLen = len > 0x1F ? 0x1F : len;
+#endif
+            FileRead(scriptFunctionList[startFuncID + f].name, readLen);
+            scriptFunctionList[startFuncID + f].name[readLen] = 0;
+            if (len > readLen)
+                FileSkip(len - readLen);
             AddScriptFuncToHash(startFuncID + f);
         }
 
@@ -3554,39 +3513,63 @@ void SaveBytecode(const char *filePath, int scriptID, int scriptCount, int start
     int pos = startScriptCodePos;
     while (pos < scriptCodePos) {
         int blockSize = scriptCodePos - pos;
-        if (blockSize > 0x7F)
-            blockSize = 0x7F;
 
         // Determine if we can use 8-bit mode
+        int size8 = blockSize > 0x7F ? 0x7F : blockSize;
         bool use8Bit = true;
-        for (int i = 0; i < blockSize; ++i) {
-            if (scriptCode[pos + i] < 0 || scriptCode[pos + i] > 0x7F) { // LoadBytecode uses fileBuffer >= 0x80 as 32-bit flag
+        for (int i = 0; i < size8; ++i) {
+            if (scriptCode[pos + i] < 0 || scriptCode[pos + i] > 0xFF) {
                 use8Bit = false;
                 break;
             }
         }
 
         if (use8Bit) {
-            byte b = (byte)blockSize;
+            byte b = (byte)size8;
             fWrite(&b, 1, 1, f);
-            for (int i = 0; i < blockSize; ++i) {
+            for (int i = 0; i < size8; ++i) {
                 b = (byte)scriptCode[pos + i];
                 fWrite(&b, 1, 1, f);
             }
+            pos += size8;
         }
         else {
-            byte b = (byte)(blockSize | 0x80);
-            fWrite(&b, 1, 1, f);
-            for (int i = 0; i < blockSize; ++i) {
-                int val = scriptCode[pos + i];
-                buf[0]  = val & 0xFF;
-                buf[1]  = (val >> 8) & 0xFF;
-                buf[2]  = (val >> 16) & 0xFF;
-                buf[3]  = (val >> 24) & 0xFF;
-                fWrite(buf, 1, 4, f);
+            // Determine if we can use 16-bit mode
+            int size16 = blockSize > 0x3F ? 0x3F : blockSize;
+            bool use16Bit = true;
+            for (int i = 0; i < size16; ++i) {
+                if (scriptCode[pos + i] < -32768 || scriptCode[pos + i] > 32767) {
+                    use16Bit = false;
+                    break;
+                }
+            }
+
+            if (use16Bit) {
+                byte b = (byte)(size16 | 0x80);
+                fWrite(&b, 1, 1, f);
+                for (int i = 0; i < size16; ++i) {
+                    short val = (short)scriptCode[pos + i];
+                    buf[0]    = val & 0xFF;
+                    buf[1]    = (val >> 8) & 0xFF;
+                    fWrite(buf, 1, 2, f);
+                }
+                pos += size16;
+            }
+            else {
+                int size32 = blockSize > 0x3F ? 0x3F : blockSize;
+                byte b     = (byte)(size32 | 0xC0);
+                fWrite(&b, 1, 1, f);
+                for (int i = 0; i < size32; ++i) {
+                    int val = scriptCode[pos + i];
+                    buf[0]  = val & 0xFF;
+                    buf[1]  = (val >> 8) & 0xFF;
+                    buf[2]  = (val >> 16) & 0xFF;
+                    buf[3]  = (val >> 24) & 0xFF;
+                    fWrite(buf, 1, 4, f);
+                }
+                pos += size32;
             }
         }
-        pos += blockSize;
     }
 
     int jumpTableSize = jumpTablePos - startJumpTablePos;
@@ -3599,38 +3582,63 @@ void SaveBytecode(const char *filePath, int scriptID, int scriptCount, int start
     pos = startJumpTablePos;
     while (pos < jumpTablePos) {
         int blockSize = jumpTablePos - pos;
-        if (blockSize > 0x7F)
-            blockSize = 0x7F;
 
+        // Determine if we can use 8-bit mode
+        int size8 = blockSize > 0x7F ? 0x7F : blockSize;
         bool use8Bit = true;
-        for (int i = 0; i < blockSize; ++i) {
-            if (jumpTable[pos + i] < 0 || jumpTable[pos + i] > 0x7F) {
+        for (int i = 0; i < size8; ++i) {
+            if (jumpTable[pos + i] < 0 || jumpTable[pos + i] > 0xFF) {
                 use8Bit = false;
                 break;
             }
         }
 
         if (use8Bit) {
-            byte b = (byte)blockSize;
+            byte b = (byte)size8;
             fWrite(&b, 1, 1, f);
-            for (int i = 0; i < blockSize; ++i) {
+            for (int i = 0; i < size8; ++i) {
                 b = (byte)jumpTable[pos + i];
                 fWrite(&b, 1, 1, f);
             }
+            pos += size8;
         }
         else {
-            byte b = (byte)(blockSize | 0x80);
-            fWrite(&b, 1, 1, f);
-            for (int i = 0; i < blockSize; ++i) {
-                int val = jumpTable[pos + i];
-                buf[0]  = val & 0xFF;
-                buf[1]  = (val >> 8) & 0xFF;
-                buf[2]  = (val >> 16) & 0xFF;
-                buf[3]  = (val >> 24) & 0xFF;
-                fWrite(buf, 1, 4, f);
+            // Determine if we can use 16-bit mode
+            int size16 = blockSize > 0x3F ? 0x3F : blockSize;
+            bool use16Bit = true;
+            for (int i = 0; i < size16; ++i) {
+                if (jumpTable[pos + i] < -32768 || jumpTable[pos + i] > 32767) {
+                    use16Bit = false;
+                    break;
+                }
+            }
+
+            if (use16Bit) {
+                byte b = (byte)(size16 | 0x80);
+                fWrite(&b, 1, 1, f);
+                for (int i = 0; i < size16; ++i) {
+                    short val = (short)jumpTable[pos + i];
+                    buf[0]    = val & 0xFF;
+                    buf[1]    = (val >> 8) & 0xFF;
+                    fWrite(buf, 1, 2, f);
+                }
+                pos += size16;
+            }
+            else {
+                int size32 = blockSize > 0x3F ? 0x3F : blockSize;
+                byte b     = (byte)(size32 | 0xC0);
+                fWrite(&b, 1, 1, f);
+                for (int i = 0; i < size32; ++i) {
+                    int val = jumpTable[pos + i];
+                    buf[0]  = val & 0xFF;
+                    buf[1]  = (val >> 8) & 0xFF;
+                    buf[2]  = (val >> 16) & 0xFF;
+                    buf[3]  = (val >> 24) & 0xFF;
+                    fWrite(buf, 1, 4, f);
+                }
+                pos += size32;
             }
         }
-        pos += blockSize;
     }
 
     // scriptCount
@@ -3702,8 +3710,12 @@ void SaveBytecode(const char *filePath, int scriptID, int scriptCount, int start
         ScriptVariableInfo *alias = &scriptValueList[a];
         fWrite(&alias->type, 1, 1, f);
         fWrite(&alias->access, 1, 1, f);
-        fWrite(alias->name, 1, 0x20, f);
-        fWrite(alias->value, 1, 0x20, f);
+        byte len = (byte)StrLength(alias->name);
+        fWrite(&len, 1, 1, f);
+        fWrite(alias->name, 1, len, f);
+        len = (byte)StrLength(alias->value);
+        fWrite(&len, 1, 1, f);
+        fWrite(alias->value, 1, len, f);
     }
 
     // Save function metadata
@@ -3714,7 +3726,9 @@ void SaveBytecode(const char *filePath, int scriptID, int scriptCount, int start
 
     for (int f_id = startFuncID; f_id < scriptFunctionCount; ++f_id) {
         fWrite(&scriptFunctionList[f_id].access, 1, 1, f);
-        fWrite(scriptFunctionList[f_id].name, 1, 0x20, f);
+        byte len = (byte)StrLength(scriptFunctionList[f_id].name);
+        fWrite(&len, 1, 1, f);
+        fWrite(scriptFunctionList[f_id].name, 1, len, f);
     }
 
     fClose(f);

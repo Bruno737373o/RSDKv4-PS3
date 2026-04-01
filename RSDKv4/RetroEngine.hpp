@@ -505,6 +505,7 @@ public:
     bool startFullScreen; // if should start as fullscreen
     bool borderless;
     bool vsync;
+    bool useXbrzFilter;
     int scalingMode;
     int windowScale;
     int refreshRate; // user-picked screen update rate

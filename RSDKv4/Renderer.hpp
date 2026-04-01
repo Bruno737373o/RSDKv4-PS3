@@ -125,8 +125,25 @@ extern RenderState renderStateList[RENDERSTATE_COUNT];
 extern RenderState currentRenderState;
 
 #if RETRO_PLATFORM == RETRO_PS3
+#include <Cg/cg.h>
+#include <Cg/cgGL.h>
 extern GLuint vboRetro[2];
 extern GLuint vboIdx;
+
+extern CGcontext cgContext;
+extern CGprogram cgVertexProgram;
+extern CGprogram cgFragmentProgram;
+
+extern CGprofile cgVertexProfile;
+extern CGprofile cgFragmentProfile;
+
+extern CGparameter cgModelViewProj;
+extern CGparameter cgTextureSizeV;
+extern CGparameter cgVideoSizeV;
+extern CGparameter cgOutputSizeV;
+extern CGparameter cgTextureSizeF;
+extern CGparameter cgVideoSizeF;
+extern CGparameter cgOutputSizeF;
 #endif
 
 // Matricies

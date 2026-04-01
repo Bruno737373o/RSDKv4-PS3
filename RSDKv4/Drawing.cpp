@@ -35,6 +35,10 @@ DisplaySettings displaySettings;
 bool convertTo32Bit     = false;
 bool mixFiltersOnJekyll = false;
 
+#if RETRO_PLATFORM == RETRO_PS3
+#include "xbrz_shader.h"
+#endif
+
 #if RETRO_USING_OPENGL
 GLint defaultFramebuffer = 0;
 GLuint framebufferHiRes  = 0;
@@ -866,6 +870,32 @@ void SetupViewport()
         glBufferData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 512 * 256 * 4, NULL, GL_STREAM_DRAW);
     }
     glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
+
+    if (cgContext == NULL) {
+        glFinish();
+        cgRTCgcInit();
+        cgContext = cgCreateContext();
+        if (cgContext) {
+            cgVertexProfile = cgGLGetLatestProfile(CG_GL_VERTEX);
+            cgVertexProgram = cgCreateProgram(cgContext, CG_SOURCE, xbrz_vshader, cgVertexProfile, "vmain", NULL);
+            if (cgVertexProgram) {
+                cgGLLoadProgram(cgVertexProgram);
+                cgModelViewProj = cgGetNamedParameter(cgVertexProgram, "modelViewProj");
+                cgTextureSizeV  = cgGetNamedParameter(cgVertexProgram, "texture_size");
+                cgVideoSizeV    = cgGetNamedParameter(cgVertexProgram, "video_size");
+                cgOutputSizeV   = cgGetNamedParameter(cgVertexProgram, "output_size");
+            }
+
+            cgFragmentProfile = cgGLGetLatestProfile(CG_GL_FRAGMENT);
+            cgFragmentProgram = cgCreateProgram(cgContext, CG_SOURCE, xbrz_fshader, cgFragmentProfile, "fmain", NULL);
+            if (cgFragmentProgram) {
+                cgGLLoadProgram(cgFragmentProgram);
+                cgTextureSizeF = cgGetNamedParameter(cgFragmentProgram, "texture_size");
+                cgVideoSizeF   = cgGetNamedParameter(cgFragmentProgram, "video_size");
+                cgOutputSizeF  = cgGetNamedParameter(cgFragmentProgram, "output_size");
+            }
+        }
+    }
 #endif
 #endif
 

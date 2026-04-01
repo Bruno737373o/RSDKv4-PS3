@@ -26,8 +26,27 @@ RenderState renderStateList[RENDERSTATE_COUNT];
 RenderState currentRenderState;
 
 #if RETRO_PLATFORM == RETRO_PS3
+#include "xbrz_shader.h"
+#undef near
+#undef far
+
 GLuint vboRetro[2] = { 0, 0 };
 GLuint vboIdx      = 0;
+
+CGcontext cgContext           = NULL;
+CGprogram cgVertexProgram     = NULL;
+CGprogram cgFragmentProgram   = NULL;
+
+CGprofile cgVertexProfile     = CG_PROFILE_UNKNOWN;
+CGprofile cgFragmentProfile   = CG_PROFILE_UNKNOWN;
+
+CGparameter cgModelViewProj   = NULL;
+CGparameter cgTextureSizeV    = NULL;
+CGparameter cgVideoSizeV      = NULL;
+CGparameter cgOutputSizeV     = NULL;
+CGparameter cgTextureSizeF    = NULL;
+CGparameter cgVideoSizeF      = NULL;
+CGparameter cgOutputSizeF     = NULL;
 #endif
 
 void SetIdentityMatrixF(MatrixF *matrix)
@@ -342,6 +361,12 @@ void NewRenderState()
 void RenderScene()
 {
 #if RETRO_USING_OPENGL
+#if RETRO_PLATFORM == RETRO_PS3
+    if (cgFragmentProgram) {
+        cgGLDisableProfile(cgGLGetLatestProfile(CG_GL_VERTEX));
+        cgGLDisableProfile(cgGLGetLatestProfile(CG_GL_FRAGMENT));
+    }
+#endif
     glDisable(GL_TEXTURE_2D);
     glDisable(GL_DEPTH_TEST);
     glDisable(GL_LIGHTING);
@@ -564,7 +589,48 @@ void RenderScene()
         }
 
 #if RETRO_USING_OPENGL
+        if (state->useFilter && cgFragmentProgram) {
+#if RETRO_PLATFORM == RETRO_PS3
+            cgGLBindProgram(cgVertexProgram);
+            cgGLEnableProfile(cgVertexProfile);
+            cgGLBindProgram(cgFragmentProgram);
+            cgGLEnableProfile(cgFragmentProfile);
+            cgGLSetStateMatrixParameter(cgModelViewProj, CG_GL_MODELVIEW_PROJECTION_MATRIX, CG_GL_MATRIX_IDENTITY);
+
+            TextureInfo *tex = NULL;
+            if (state->id == (int)textureList[0].id || (textureList[0].id2 != 0 && state->id == (int)textureList[0].id2)) {
+                tex = &textureList[0];
+            }
+            else {
+                for (int t = 1; t < TEXTURE_COUNT; ++t) {
+                    if (textureList[t].id == (uint)state->id) {
+                        tex = &textureList[t];
+                        break;
+                    }
+                }
+            }
+
+            if (!tex) tex = &textureList[0];
+
+            float textureSize[2] = { (float)tex->width, (float)tex->height };
+            if (cgTextureSizeV) cgGLSetParameter2fv(cgTextureSizeV, textureSize);
+            if (cgTextureSizeF) cgGLSetParameter2fv(cgTextureSizeF, textureSize);
+
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+#endif
+        }
+
         glDrawElements(GL_TRIANGLES, state->indexCount, GL_UNSIGNED_SHORT, state->indexPtr);
+
+        if (state->useFilter && cgFragmentProgram) {
+#if RETRO_PLATFORM == RETRO_PS3
+            cgGLDisableProfile(cgVertexProfile);
+            cgGLDisableProfile(cgFragmentProfile);
+#endif
+        }
 #endif
     }
 
@@ -1418,7 +1484,7 @@ void RenderRetroBuffer(int alpha, float z)
             currentRenderState.id         = texID;
             currentRenderState.useColors  = true;
             currentRenderState.useTexture = true;
-            currentRenderState.useFilter  = true;
+            currentRenderState.useFilter  = Engine.useXbrzFilter;
             currentRenderState.vertPtr    = &drawVertexList[vertexListSize];
             currentRenderState.indexPtr   = drawIndexList;
             renderStateCount++;
