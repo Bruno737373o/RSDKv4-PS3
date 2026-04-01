@@ -443,9 +443,11 @@ void InitUserdata()
 #if RETRO_PLATFORM == RETRO_PS3
         ini.SetBool("Window", "VSync", Engine.vsync = true);
         ini.SetBool("Window", "XbrzFilter", Engine.useXbrzFilter = true);
+        ini.SetInteger("Window", "ScreenFilter", Engine.filterMode = FILTER_XBRZ);
 #else
         ini.SetBool("Window", "VSync", Engine.vsync = false);
         ini.SetBool("Window", "XbrzFilter", Engine.useXbrzFilter = false);
+        ini.SetInteger("Window", "ScreenFilter", Engine.filterMode = FILTER_NONE);
 #endif
         ini.SetInteger("Window", "ScalingMode", Engine.scalingMode = 0);
         ini.SetInteger("Window", "WindowScale", Engine.windowScale = 2);
@@ -618,19 +620,24 @@ void InitUserdata()
             Engine.vsync = false;
 #endif
         }
-        if (!ini.GetBool("Window", "XbrzFilter", &Engine.useXbrzFilter)) {
+        if (!ini.GetInteger("Window", "ScreenFilter", &Engine.filterMode)) {
+            if (ini.GetBool("Window", "XbrzFilter", &Engine.useXbrzFilter)) {
+                Engine.filterMode = Engine.useXbrzFilter ? FILTER_XBRZ : FILTER_NONE;
+            }
+            else {
 #if RETRO_PLATFORM == RETRO_PS3
-            Engine.useXbrzFilter = true;
+                Engine.filterMode = FILTER_XBRZ;
 #else
-            Engine.useXbrzFilter = false;
+                Engine.filterMode = FILTER_NONE;
 #endif
+            }
         }
+        Engine.useXbrzFilter = Engine.filterMode == FILTER_XBRZ;
+
 #if RETRO_PLATFORM == RETRO_PS3
-        else {
-            // Force VSync on PS3 even if settings.ini says false, 
-            // as the performance is too high otherwise.
-            Engine.vsync = true;
-        }
+        // Force VSync on PS3 even if settings.ini says false, 
+        // as the performance is too high otherwise.
+        Engine.vsync = true;
 #endif
         if (!ini.GetInteger("Window", "ScalingMode", &Engine.scalingMode))
             Engine.scalingMode = 0;
@@ -915,8 +922,10 @@ void WriteSettings()
     ini.SetComment("Window", "VSComment",
                    "Determines if VSync will be active or not (not recommended as the engine is built around running at 60 FPS)");
     ini.SetBool("Window", "VSync", Engine.vsync);
-    ini.SetComment("Window", "XbrzComment", "Determines if the xBRZ x4 filter should be used for 2D rendering");
+    ini.SetComment("Window", "XbrzComment", "Determines if the xBRZ x4 filter should be used for 2D rendering (Legacy)");
     ini.SetBool("Window", "XbrzFilter", Engine.useXbrzFilter);
+    ini.SetComment("Window", "FilterComment", "0 = None, 1 = xBRZ, 2 = CRT, 3 = TV");
+    ini.SetInteger("Window", "ScreenFilter", Engine.filterMode);
     ini.SetComment("Window", "SMComment", "Determines what scaling is used. 0 is nearest neighbour, 1 is linear.");
     ini.SetInteger("Window", "ScalingMode", Engine.scalingMode);
     ini.SetComment("Window", "WSComment", "How big the window will be");

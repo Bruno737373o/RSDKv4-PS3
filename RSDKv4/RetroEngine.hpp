@@ -312,6 +312,13 @@ enum RetroGameType {
     GAME_SONIC2  = 2,
 };
 
+enum FilterModes {
+    FILTER_NONE,
+    FILTER_XBRZ,
+    FILTER_CRT,
+    FILTER_TV,
+};
+
 // General Defines
 #define SCREEN_YSIZE   (240)
 #define SCREEN_CENTERY (SCREEN_YSIZE / 2)
@@ -506,6 +513,7 @@ public:
     bool borderless;
     bool vsync;
     bool useXbrzFilter;
+    int filterMode;
     int scalingMode;
     int windowScale;
     int refreshRate; // user-picked screen update rate

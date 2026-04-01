@@ -37,6 +37,7 @@ bool mixFiltersOnJekyll = false;
 
 #if RETRO_PLATFORM == RETRO_PS3
 #include "xbrz_shader.h"
+#include "Shaders/crt_shaders.h"
 #endif
 
 #if RETRO_USING_OPENGL
@@ -202,16 +203,21 @@ int InitRenderDevice()
 #if RETRO_USING_OPENGL
 
 #if RETRO_PLATFORM == RETRO_PS3
-    // Using NULL for psglInit uses default options which is generally safest
-    psglInit(NULL);
+    static PSGLdevice *psgl_device   = NULL;
+    static PSGLcontext *psgl_context = NULL;
 
-    PSGLdevice *psgl_device = psglCreateDeviceAuto(GL_ARGB_SCE, GL_DEPTH_COMPONENT24, GL_MULTISAMPLING_NONE_SCE);
     if (!psgl_device) {
-        PrintLog("PSGL ERROR: psglCreateDeviceAuto failed!");
-        return 0;
-    }
+        // Using NULL for psglInit uses default options which is generally safest
+        psglInit(NULL);
 
-    PSGLcontext *psgl_context = psglCreateContext();
+        psgl_device = psglCreateDeviceAuto(GL_ARGB_SCE, GL_DEPTH_COMPONENT24, GL_MULTISAMPLING_NONE_SCE);
+        if (!psgl_device) {
+            PrintLog("PSGL ERROR: psglCreateDeviceAuto failed!");
+            return 0;
+        }
+
+        psgl_context = psglCreateContext();
+    }
 
     if (psgl_device && psgl_context) {
         psglMakeCurrent(psgl_context, psgl_device);
@@ -342,9 +348,9 @@ int InitRenderDevice()
     memset(Engine.frameBuffer2x, 0, GFX_LINESIZE_DOUBLE * (SCREEN_YSIZE * 2) * sizeof(ushort));
 #endif
 #if RETRO_PLATFORM == RETRO_PS3
-    // Use 512x256 as buffer size to match texture dimensions for full DMA optimization
-    Engine.texBuffer = (uint *)memalign(128, (512 * 256) * sizeof(uint));
-    memset(Engine.texBuffer, 0, (512 * 256) * sizeof(uint));
+    // Use 1024x512 as buffer size to match texture dimensions for full DMA optimization and widescreen
+    Engine.texBuffer = (uint *)memalign(128, (1024 * 512) * sizeof(uint));
+    memset(Engine.texBuffer, 0, (1024 * 512) * sizeof(uint));
 #else
     Engine.texBuffer = new uint[GFX_LINESIZE * SCREEN_YSIZE];
     memset(Engine.texBuffer, 0, (GFX_LINESIZE * SCREEN_YSIZE) * sizeof(uint));
@@ -779,7 +785,7 @@ void SetScreenDimensions(int width, int height)
 void SetScreenSize(int width, int lineSize)
 {
 #if RETRO_PLATFORM == RETRO_PS3
-    lineSize = 512; // Force power-of-two line size for optimal GPU performance
+    lineSize = 1024; // Force power-of-two line size for optimal GPU performance and widescreen support
 #endif
     SCREEN_XSIZE        = width;
     SCREEN_CENTERX      = width / 2;
@@ -863,13 +869,13 @@ void SetupViewport()
 #if RETRO_PLATFORM == RETRO_PS3
     if (vboRetro[0] == 0) {
         glGenBuffers(2, &vboRetro[0]);
+        for (int i = 0; i < 2; ++i) {
+            glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, vboRetro[i]);
+            // 1024 * 512 * 4 bytes for 32-bit ARGB (fits maximum possible retro buffer)
+            glBufferData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 1024 * 512 * 4, NULL, GL_STREAM_DRAW);
+        }
+        glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
     }
-    for (int i = 0; i < 2; ++i) {
-        glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, vboRetro[i]);
-        // 512 * 256 * 4 bytes for 32-bit ARGB
-        glBufferData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 512 * 256 * 4, NULL, GL_STREAM_DRAW);
-    }
-    glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
 
     if (cgContext == NULL) {
         glFinish();
@@ -893,6 +899,38 @@ void SetupViewport()
                 cgTextureSizeF = cgGetNamedParameter(cgFragmentProgram, "texture_size");
                 cgVideoSizeF   = cgGetNamedParameter(cgFragmentProgram, "video_size");
                 cgOutputSizeF  = cgGetNamedParameter(cgFragmentProgram, "output_size");
+            }
+
+            cgVertexProgramCRT = cgCreateProgram(cgContext, CG_SOURCE, crt_vshader, cgVertexProfile, "vmain", NULL);
+            if (cgVertexProgramCRT) {
+                cgGLLoadProgram(cgVertexProgramCRT);
+                cgModelViewProjCRT = cgGetNamedParameter(cgVertexProgramCRT, "modelViewProj");
+                cgTextureSizeVCRT  = cgGetNamedParameter(cgVertexProgramCRT, "texture_size");
+                cgVideoSizeVCRT    = cgGetNamedParameter(cgVertexProgramCRT, "video_size");
+                cgOutputSizeVCRT   = cgGetNamedParameter(cgVertexProgramCRT, "output_size");
+            }
+            cgFragmentProgramCRT = cgCreateProgram(cgContext, CG_SOURCE, crt_fshader, cgFragmentProfile, "fmain", NULL);
+            if (cgFragmentProgramCRT) {
+                cgGLLoadProgram(cgFragmentProgramCRT);
+                cgTextureSizeFCRT = cgGetNamedParameter(cgFragmentProgramCRT, "texture_size");
+                cgVideoSizeFCRT   = cgGetNamedParameter(cgFragmentProgramCRT, "video_size");
+                cgOutputSizeFCRT  = cgGetNamedParameter(cgFragmentProgramCRT, "output_size");
+            }
+
+            cgVertexProgramTV = cgCreateProgram(cgContext, CG_SOURCE, crt_vshader, cgVertexProfile, "vmain", NULL);
+            if (cgVertexProgramTV) {
+                cgGLLoadProgram(cgVertexProgramTV);
+                cgModelViewProjTV = cgGetNamedParameter(cgVertexProgramTV, "modelViewProj");
+                cgTextureSizeVTV  = cgGetNamedParameter(cgVertexProgramTV, "texture_size");
+                cgVideoSizeVTV    = cgGetNamedParameter(cgVertexProgramTV, "video_size");
+                cgOutputSizeVTV   = cgGetNamedParameter(cgVertexProgramTV, "output_size");
+            }
+            cgFragmentProgramTV = cgCreateProgram(cgContext, CG_SOURCE, tv_fshader, cgFragmentProfile, "fmain", NULL);
+            if (cgFragmentProgramTV) {
+                cgGLLoadProgram(cgFragmentProgramTV);
+                cgTextureSizeFTV = cgGetNamedParameter(cgFragmentProgramTV, "texture_size");
+                cgVideoSizeFTV   = cgGetNamedParameter(cgFragmentProgramTV, "video_size");
+                cgOutputSizeFTV  = cgGetNamedParameter(cgFragmentProgramTV, "output_size");
             }
         }
     }
@@ -1044,17 +1082,15 @@ void SetupViewport()
 
     bool transfer = false;
 #if RETRO_USING_OPENGL
-    if (textureList[0].id != 0) {
-        glDeleteTextures(1, &textureList[0].id);
+    if (textureList[0].id == 0) {
+        glGenTextures(1, &textureList[0].id);
 #if RETRO_PLATFORM == RETRO_PS3
-        glDeleteTextures(1, &textureList[0].id2);
+        glGenTextures(1, &textureList[0].id2);
 #endif
+    }
+    else {
         transfer = true;
     }
-    glGenTextures(1, &textureList[0].id);
-#if RETRO_PLATFORM == RETRO_PS3
-    glGenTextures(1, &textureList[0].id2);
-#endif
     glBindTexture(GL_TEXTURE_2D, textureList[0].id);
 #endif
 

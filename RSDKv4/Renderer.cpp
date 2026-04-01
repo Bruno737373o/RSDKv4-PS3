@@ -27,6 +27,7 @@ RenderState currentRenderState;
 
 #if RETRO_PLATFORM == RETRO_PS3
 #include "xbrz_shader.h"
+#include "Shaders/crt_shaders.h"
 #undef near
 #undef far
 
@@ -36,6 +37,10 @@ GLuint vboIdx      = 0;
 CGcontext cgContext           = NULL;
 CGprogram cgVertexProgram     = NULL;
 CGprogram cgFragmentProgram   = NULL;
+CGprogram cgVertexProgramCRT   = NULL;
+CGprogram cgFragmentProgramCRT = NULL;
+CGprogram cgVertexProgramTV    = NULL;
+CGprogram cgFragmentProgramTV  = NULL;
 
 CGprofile cgVertexProfile     = CG_PROFILE_UNKNOWN;
 CGprofile cgFragmentProfile   = CG_PROFILE_UNKNOWN;
@@ -47,6 +52,22 @@ CGparameter cgOutputSizeV     = NULL;
 CGparameter cgTextureSizeF    = NULL;
 CGparameter cgVideoSizeF      = NULL;
 CGparameter cgOutputSizeF     = NULL;
+
+CGparameter cgModelViewProjCRT = NULL;
+CGparameter cgTextureSizeVCRT  = NULL;
+CGparameter cgVideoSizeVCRT    = NULL;
+CGparameter cgOutputSizeVCRT   = NULL;
+CGparameter cgTextureSizeFCRT  = NULL;
+CGparameter cgVideoSizeFCRT    = NULL;
+CGparameter cgOutputSizeFCRT   = NULL;
+
+CGparameter cgModelViewProjTV  = NULL;
+CGparameter cgTextureSizeVTV   = NULL;
+CGparameter cgVideoSizeVTV     = NULL;
+CGparameter cgOutputSizeVTV    = NULL;
+CGparameter cgTextureSizeFTV   = NULL;
+CGparameter cgVideoSizeFTV     = NULL;
+CGparameter cgOutputSizeFTV    = NULL;
 #endif
 
 void SetIdentityMatrixF(MatrixF *matrix)
@@ -275,6 +296,7 @@ void ResetRenderStates()
     currentRenderState.depthTest    = false;
     currentRenderState.useNormals   = false;
     currentRenderState.useFilter    = false;
+    currentRenderState.filterMode   = FILTER_NONE;
     currentRenderState.indexPtr     = drawIndexList;
     renderStateCount                = -1;
     vertexListSize                  = 0;
@@ -589,13 +611,36 @@ void RenderScene()
         }
 
 #if RETRO_USING_OPENGL
-        if (state->useFilter && cgFragmentProgram) {
+        if (state->useFilter && cgContext) {
 #if RETRO_PLATFORM == RETRO_PS3
-            cgGLBindProgram(cgVertexProgram);
+            CGprogram vProg = cgVertexProgram;
+            CGprogram fProg = cgFragmentProgram;
+
+            switch (state->filterMode) {
+                default:
+                case FILTER_XBRZ:
+                    vProg = cgVertexProgram;
+                    fProg = cgFragmentProgram;
+                    break;
+                case FILTER_CRT:
+                    vProg = cgVertexProgramCRT;
+                    fProg = cgFragmentProgramCRT;
+                    break;
+                case FILTER_TV:
+                    vProg = cgVertexProgramTV;
+                    fProg = cgFragmentProgramTV;
+                    break;
+            }
+
+            cgGLBindProgram(vProg);
             cgGLEnableProfile(cgVertexProfile);
-            cgGLBindProgram(cgFragmentProgram);
+            cgGLBindProgram(fProg);
             cgGLEnableProfile(cgFragmentProfile);
-            cgGLSetStateMatrixParameter(cgModelViewProj, CG_GL_MODELVIEW_PROJECTION_MATRIX, CG_GL_MATRIX_IDENTITY);
+
+            CGparameter mvpParam = cgModelViewProj;
+            if (state->filterMode == FILTER_CRT) mvpParam = cgModelViewProjCRT;
+            if (state->filterMode == FILTER_TV) mvpParam = cgModelViewProjTV;
+            cgGLSetStateMatrixParameter(mvpParam, CG_GL_MODELVIEW_PROJECTION_MATRIX, CG_GL_MATRIX_IDENTITY);
 
             TextureInfo *tex = NULL;
             if (state->id == (int)textureList[0].id || (textureList[0].id2 != 0 && state->id == (int)textureList[0].id2)) {
@@ -613,11 +658,35 @@ void RenderScene()
             if (!tex) tex = &textureList[0];
 
             float textureSize[2] = { (float)tex->width, (float)tex->height };
-            if (cgTextureSizeV) cgGLSetParameter2fv(cgTextureSizeV, textureSize);
-            if (cgTextureSizeF) cgGLSetParameter2fv(cgTextureSizeF, textureSize);
+            CGparameter tsV = cgTextureSizeV;
+            CGparameter tsF = cgTextureSizeF;
+            if (state->filterMode == FILTER_CRT) { tsV = cgTextureSizeVCRT; tsF = cgTextureSizeFCRT; }
+            if (state->filterMode == FILTER_TV) { tsV = cgTextureSizeVTV; tsF = cgTextureSizeFTV; }
 
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+            if (tsV) cgGLSetParameter2fv(tsV, textureSize);
+            if (tsF) cgGLSetParameter2fv(tsF, textureSize);
+
+            float videoSize[2]  = { (float)SCREEN_XSIZE, (float)SCREEN_YSIZE };
+            float outputSize[2] = { (float)displaySettings.width, (float)displaySettings.height };
+            CGparameter vsV = cgVideoSizeV;
+            CGparameter vsF = cgVideoSizeF;
+            if (state->filterMode == FILTER_CRT) { vsV = cgVideoSizeVCRT; vsF = cgVideoSizeFCRT; }
+            if (state->filterMode == FILTER_TV) { vsV = cgVideoSizeVTV; vsF = cgVideoSizeFTV; }
+
+            if (vsV) cgGLSetParameter2fv(vsV, videoSize);
+            if (vsF) cgGLSetParameter2fv(vsF, videoSize);
+
+            CGparameter osV = cgOutputSizeV;
+            CGparameter osF = cgOutputSizeF;
+            if (state->filterMode == FILTER_CRT) { osV = cgOutputSizeVCRT; osF = cgOutputSizeFCRT; }
+            if (state->filterMode == FILTER_TV) { osV = cgOutputSizeVTV; osF = cgOutputSizeFTV; }
+
+            if (osV) cgGLSetParameter2fv(osV, outputSize);
+            if (osF) cgGLSetParameter2fv(osF, outputSize);
+
+            GLenum filter = Engine.scalingMode ? GL_LINEAR : GL_NEAREST;
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 #endif
@@ -625,7 +694,7 @@ void RenderScene()
 
         glDrawElements(GL_TRIANGLES, state->indexCount, GL_UNSIGNED_SHORT, state->indexPtr);
 
-        if (state->useFilter && cgFragmentProgram) {
+        if (state->useFilter && cgContext) {
 #if RETRO_PLATFORM == RETRO_PS3
             cgGLDisableProfile(cgVertexProfile);
             cgGLDisableProfile(cgFragmentProfile);
@@ -1423,25 +1492,25 @@ void TransferRetroBuffer()
     if (convertTo32Bit) {
         ushort *frameBufferPtr = Engine.frameBuffer;
         uint *texBufferPtr     = Engine.texBuffer;
-        int count              = 512 * SCREEN_YSIZE;
+        int count              = GFX_LINESIZE * SCREEN_YSIZE;
         while (count--) {
             *texBufferPtr++ = gfxPalette16to32[*frameBufferPtr++];
         }
 
         glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, vboRetro[vboIdx]);
-        glBufferSubData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0, 512 * SCREEN_YSIZE * 4, Engine.texBuffer);
+        glBufferSubData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0, GFX_LINESIZE * SCREEN_YSIZE * 4, Engine.texBuffer);
 
         glBindTexture(GL_TEXTURE_2D, texID);
-        glTextureReferenceSCE(GL_TEXTURE_2D, 1, 512, 256, 0, GL_ARGB_SCE, 512 * 4, 0);
+        glTextureReferenceSCE(GL_TEXTURE_2D, 1, textureList[0].width, textureList[0].height, 0, GL_ARGB_SCE, GFX_LINESIZE * 4, 0);
         glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
     }
     else {
         // Direct 16-bit reference
         glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, vboRetro[vboIdx]);
-        glBufferSubData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0, 512 * SCREEN_YSIZE * 2, Engine.frameBuffer);
+        glBufferSubData(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0, GFX_LINESIZE * SCREEN_YSIZE * 2, Engine.frameBuffer);
 
         glBindTexture(GL_TEXTURE_2D, texID);
-        glTextureReferenceSCE(GL_TEXTURE_2D, 1, 512, 256, 0, GL_BGRA, 512 * 2, 0);
+        glTextureReferenceSCE(GL_TEXTURE_2D, 1, textureList[0].width, textureList[0].height, 0, GL_BGRA, GFX_LINESIZE * 2, 0);
         glBindBuffer(GL_TEXTURE_REFERENCE_BUFFER_SCE, 0);
     }
     glBindTexture(GL_TEXTURE_2D, 0);
@@ -1475,7 +1544,7 @@ void RenderRetroBuffer(int alpha, float z)
 #else
         uint texID = textureList[0].id;
 #endif
-        if (renderStateCount < 0 || (uint)currentRenderState.id != texID) {
+        if (renderStateCount < 0 || (uint)currentRenderState.id != texID || currentRenderState.filterMode != Engine.filterMode) {
             if (renderStateCount >= 0) {
                 RenderState *state = &renderStateList[renderStateCount];
                 memcpy(state, &currentRenderState, sizeof(RenderState));
@@ -1484,7 +1553,8 @@ void RenderRetroBuffer(int alpha, float z)
             currentRenderState.id         = texID;
             currentRenderState.useColors  = true;
             currentRenderState.useTexture = true;
-            currentRenderState.useFilter  = Engine.useXbrzFilter;
+            currentRenderState.useFilter  = Engine.filterMode != FILTER_NONE;
+            currentRenderState.filterMode = Engine.filterMode;
             currentRenderState.vertPtr    = &drawVertexList[vertexListSize];
             currentRenderState.indexPtr   = drawIndexList;
             renderStateCount++;
@@ -1526,8 +1596,8 @@ void RenderRetroBuffer(int alpha, float z)
             vertex3->texCoordX  = retroVertexList[24];
             vertex3->texCoordY  = retroVertexList[25];
             vertex3->r          = vertexR;
-            vertex3->b          = vertexB;
             vertex3->g          = vertexG;
+            vertex3->b          = vertexB;
             vertex3->a          = a;
 
             DrawVertex *vertex4 = &drawVertexList[vertexListSize + 3];

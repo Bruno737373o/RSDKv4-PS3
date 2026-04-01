@@ -1,0 +1,103 @@
+#ifndef CRT_SHADERS_H
+#define CRT_SHADERS_H
+
+#if RETRO_PLATFORM == RETRO_PS3
+
+static const char *crt_vshader = 
+"struct out_vertex {\n"
+"    float4 position : POSITION;\n"
+"    float4 color    : COLOR;\n"
+"    float2 texCoord : TEXCOORD0;\n"
+"};\n"
+"uniform float4x4 modelViewProj;\n"
+"out_vertex vmain(float4 position : POSITION, float4 color : COLOR, float2 texCoord : TEXCOORD0)\n"
+"{\n"
+"    out_vertex OUT;\n"
+"    OUT.position = mul(modelViewProj, position);\n"
+"    OUT.color = color;\n"
+"    OUT.texCoord = texCoord;\n"
+"    return OUT;\n"
+"}\n";
+
+// Basic CRT Shader with sharp scanlines
+static const char *crt_fshader = 
+"struct out_vertex {\n"
+"    float4 color    : COLOR;\n"
+"    float2 texCoord : TEXCOORD0;\n"
+"};\n"
+"uniform sampler2D decal : TEXUNIT0;\n"
+"uniform float2 texture_size;\n"
+"uniform float2 video_size;\n"
+"uniform float2 output_size;\n"
+
+"float4 fmain(in out_vertex VAR) : COLOR\n"
+"{\n"
+"    float2 ratio = video_size / texture_size;\n"
+"    float2 ps = 1.0 / texture_size;\n"
+"    float2 uv = VAR.texCoord;\n"
+"    \n"
+"    // Clamp UV to avoid bleeding from padding area\n"
+"    float2 clamped_uv = clamp(uv, 0.5 * ps, ratio - 0.5 * ps);\n"
+"    float3 res = tex2D(decal, clamped_uv).rgb;\n"
+"    \n"
+"    // Scanlines (Sharp and dark like requested)\n"
+"    float scanline = abs(sin(uv.y / ratio.y * video_size.y * 3.14159265));\n"
+"    res *= lerp(0.2, 1.1, pow(scanline, 0.4));\n"
+"    \n"
+"    // Boost brightness to compensate for scanlines\n"
+"    res *= 1.1;\n"
+"    \n"
+"    return float4(saturate(res), 1.0) * VAR.color;\n"
+"}\n";
+
+// Tube TV Shader with curvature, scanlines and vignette
+static const char *tv_fshader = 
+"struct out_vertex {\n"
+"    float4 color    : COLOR;\n"
+"    float2 texCoord : TEXCOORD0;\n"
+"};\n"
+"uniform sampler2D decal : TEXUNIT0;\n"
+"uniform float2 texture_size;\n"
+"uniform float2 video_size;\n"
+"uniform float2 output_size;\n"
+
+"float4 fmain(in out_vertex VAR) : COLOR\n"
+"{\n"
+"    float2 ratio = video_size / texture_size;\n"
+"    float2 ps = 1.0 / texture_size;\n"
+"    \n"
+"    // Curvature calculation\n"
+"    float2 uv = (VAR.texCoord / ratio - 0.5) * 2.0;\n"
+"    float2 uv_orig = uv;\n"
+"    uv.x *= 1.0 + pow((abs(uv_orig.y) / 6.5), 2.0);\n"
+"    uv.y *= 1.0 + pow((abs(uv_orig.x) / 5.5), 2.0);\n"
+"    uv *= 1.02;\n"
+"    \n"
+"    float2 vig_uv = uv / 2.0 + 0.5;\n"
+"    \n"
+"    // OOB check for the tube border\n"
+"    if (vig_uv.x < 0.0 || vig_uv.x > 1.0 || vig_uv.y < 0.0 || vig_uv.y > 1.0)\n"
+"        return float4(0.0, 0.0, 0.0, 1.0) * VAR.color;\n"
+"        \n"
+"    // Vignette\n"
+"    float vig = vig_uv.x * vig_uv.y * (1.0 - vig_uv.x) * (1.0 - vig_uv.y);\n"
+"    vig = saturate(pow(max(0.00001, 16.0 * vig), 0.1));\n"
+"    \n"
+"    // Sample (Fill more of the screen)\n"
+"    float2 sampled_uv = vig_uv * ratio;\n"
+"    float3 res = tex2D(decal, clamp(sampled_uv, 0.5 * ps, ratio - 0.5 * ps)).rgb;\n"
+"    \n"
+"    // Scanlines (centered on pixel rows)\n"
+"    float scanline = lerp(1.0, 0.7, abs(cos(vig_uv.y * video_size.y * 3.14159265)));\n"
+"    res *= scanline;\n"
+"    \n"
+"    res *= vig;\n"
+"    \n"
+"    // Boost brightness\n"
+"    res *= 1.4;\n"
+"    \n"
+"    return float4(saturate(res), 1.0) * VAR.color;\n"
+"}\n";
+
+#endif // RETRO_PLATFORM == RETRO_PS3
+#endif // CRT_SHADERS_H

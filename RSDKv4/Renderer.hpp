@@ -104,6 +104,7 @@ struct RenderState {
     byte depthTest;
     byte useNormals;
     byte useFilter;
+    byte filterMode;
 };
 
 extern float retroVertexList[40];
@@ -133,6 +134,10 @@ extern GLuint vboIdx;
 extern CGcontext cgContext;
 extern CGprogram cgVertexProgram;
 extern CGprogram cgFragmentProgram;
+extern CGprogram cgVertexProgramCRT;
+extern CGprogram cgFragmentProgramCRT;
+extern CGprogram cgVertexProgramTV;
+extern CGprogram cgFragmentProgramTV;
 
 extern CGprofile cgVertexProfile;
 extern CGprofile cgFragmentProfile;
@@ -144,6 +149,22 @@ extern CGparameter cgOutputSizeV;
 extern CGparameter cgTextureSizeF;
 extern CGparameter cgVideoSizeF;
 extern CGparameter cgOutputSizeF;
+
+extern CGparameter cgModelViewProjCRT;
+extern CGparameter cgTextureSizeVCRT;
+extern CGparameter cgVideoSizeVCRT;
+extern CGparameter cgOutputSizeVCRT;
+extern CGparameter cgTextureSizeFCRT;
+extern CGparameter cgVideoSizeFCRT;
+extern CGparameter cgOutputSizeFCRT;
+
+extern CGparameter cgModelViewProjTV;
+extern CGparameter cgTextureSizeVTV;
+extern CGparameter cgVideoSizeVTV;
+extern CGparameter cgOutputSizeVTV;
+extern CGparameter cgTextureSizeFTV;
+extern CGparameter cgVideoSizeFTV;
+extern CGparameter cgOutputSizeFTV;
 #endif
 
 // Matricies
