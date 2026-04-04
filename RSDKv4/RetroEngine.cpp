@@ -360,6 +360,7 @@ bool ProcessEvents()
 void RetroEngine::Init()
 {
 #if RETRO_PLATFORM == RETRO_PS3
+    InitReader();
     InitDebugMutex();
     cellSysutilRegisterCallback(0, PS3SysutilCallback, NULL);
     cellSysmoduleLoadModule(CELL_SYSMODULE_FS);

@@ -12,6 +12,10 @@ int touchFlags = 0;
 
 int taListStore = 0;
 
+#if RETRO_PLATFORM == RETRO_PS3
+int modInstallIndex = 0;
+#endif
+
 void PrintLog(const char *msg, ...)
 {
 #ifndef RETRO_DISABLE_LOG
@@ -321,6 +325,9 @@ void ProcessStageSelect()
             int count = 15;
 #if RETRO_USE_MOD_LOADER
             count += 2;
+#if RETRO_PLATFORM == RETRO_PS3
+            count += 2;
+#endif
 #endif
 
             if (gameMenu[0].selection2 > count)
@@ -330,7 +337,8 @@ void ProcessStageSelect()
 
             DrawTextMenu(&gameMenu[0], SCREEN_CENTERX, 72);
             if (keyPress.start || keyPress.A) {
-                if (gameMenu[0].selection2 == 9) {
+                int selection = gameMenu[0].selection2;
+                if (selection == 9) { // START GAME
                     ClearGraphicsData();
                     ClearAnimationData();
                     activeStageList   = 0;
@@ -338,7 +346,7 @@ void ProcessStageSelect()
                     Engine.gameMode   = ENGINE_MAINGAME;
                     stageListPosition = 0;
                 }
-                else if (gameMenu[0].selection2 == 11) {
+                else if (selection == 11) { // STAGE SELECT
                     SetupTextMenu(&gameMenu[0], 0);
                     AddTextMenuEntry(&gameMenu[0], "SELECT A PLAYER");
                     SetupTextMenu(&gameMenu[1], 0);
@@ -348,7 +356,7 @@ void ProcessStageSelect()
                     gameMenu[1].selection1     = 0;
                     stageMode                  = DEVMENU_PLAYERSEL;
                 }
-                else if (gameMenu[0].selection2 == 13) {
+                else if (selection == 13) { // START MENU
                     ClearNativeObjects();
                     Engine.gameMode         = ENGINE_WAIT;
                     Engine.nativeMenuFadeIn = false;
@@ -372,12 +380,17 @@ void ProcessStageSelect()
 #endif
                 }
 #if RETRO_USE_MOD_LOADER
-                else if (gameMenu[0].selection2 == 15) {
+                else if (selection == 15) { // MODS
                     InitMods(); // reload mods
                     SetTextMenu(DEVMENU_MODMENU);
                 }
+#if RETRO_PLATFORM == RETRO_PS3
+                else if (selection == 17) { // INSTALL MODS
+                    SetTextMenu(DEVMENU_MODINSTALL);
+                }
 #endif
-                else {
+#endif
+                else if (selection == count) { // EXIT GAME
 #if RETRO_USE_MOD_LOADER
                     ExitGame();
 #else
@@ -571,6 +584,87 @@ void ProcessStageSelect()
             break;
         }
 #if RETRO_USE_MOD_LOADER
+#if RETRO_PLATFORM == RETRO_PS3
+        case DEVMENU_MODINSTALL: // Mod Install Menu
+        {
+            if (keyDown.down) {
+                gameMenu[1].timer++;
+                if (gameMenu[1].timer > 8) {
+                    gameMenu[1].timer = 0;
+                    keyPress.down   = true;
+                }
+            }
+            else {
+                if (keyDown.up) {
+                    gameMenu[1].timer--;
+                    if (gameMenu[1].timer < -8) {
+                        gameMenu[1].timer = 0;
+                        keyPress.up     = true;
+                    }
+                }
+                else {
+                    gameMenu[1].timer = 0;
+                }
+            }
+
+            if (keyPress.down) {
+                gameMenu[1].selection1++;
+                if (gameMenu[1].rowCount > gameMenu[1].visibleRowCount) {
+                    if (gameMenu[1].selection1 - gameMenu[1].visibleRowOffset >= gameMenu[1].visibleRowCount) {
+                        gameMenu[1].visibleRowOffset++;
+                    }
+                }
+            }
+
+            if (keyPress.up) {
+                gameMenu[1].selection1--;
+                if (gameMenu[1].selection1 - gameMenu[1].visibleRowOffset < 0 && gameMenu[1].visibleRowOffset > 0) {
+                    gameMenu[1].visibleRowOffset--;
+                }
+            }
+
+            if (gameMenu[1].selection1 >= gameMenu[1].rowCount) {
+                gameMenu[1].selection1       = 0;
+                gameMenu[1].visibleRowOffset = 0;
+            }
+
+            if (gameMenu[1].selection1 < 0) {
+                gameMenu[1].selection1       = gameMenu[1].rowCount - 1;
+                if (gameMenu[1].rowCount > gameMenu[1].visibleRowCount)
+                    gameMenu[1].visibleRowOffset = gameMenu[1].rowCount - gameMenu[1].visibleRowCount;
+                else
+                    gameMenu[1].visibleRowOffset = 0;
+            }
+
+            if (keyPress.A || keyPress.start) {
+                if (gameMenu[1].selection1 < (int)modInstallList.size()) {
+                    modInstallIndex = gameMenu[1].selection1;
+                    SetTextMenu(DEVMENU_MODINSTALLING);
+                }
+            }
+            else if (keyPress.B) {
+                SetTextMenu(DEVMENU_MAIN);
+            }
+
+            DrawTextMenu(&gameMenu[0], SCREEN_CENTERX - 4, 40);
+            DrawTextMenu(&gameMenu[1], SCREEN_CENTERX + 100, 64);
+            break;
+        }
+        case DEVMENU_MODINSTALLING: {
+            DrawTextMenu(&gameMenu[0], SCREEN_CENTERX, 72);
+            DrawTextMenu(&gameMenu[1], SCREEN_CENTERX, 96);
+
+            // Wait a few frames to ensure the text is rendered before freezing the thread with IO
+            if (gameMenu[1].timer < 5) {
+                gameMenu[1].timer++;
+            }
+            else {
+                InstallMod(&modInstallList[modInstallIndex]);
+                SetTextMenu(DEVMENU_MODINSTALL);
+            }
+            break;
+        }
+#endif
         case DEVMENU_MODMENU: // Mod Menu
         {
             int preOption = gameMenu[1].selection1;
@@ -712,6 +806,10 @@ void SetTextMenu(int sm)
 #if RETRO_USE_MOD_LOADER
             AddTextMenuEntry(&gameMenu[0], " ");
             AddTextMenuEntry(&gameMenu[0], "MODS");
+#if RETRO_PLATFORM == RETRO_PS3
+            AddTextMenuEntry(&gameMenu[0], " ");
+            AddTextMenuEntry(&gameMenu[0], "INSTALL MODS");
+#endif
 #endif
             AddTextMenuEntry(&gameMenu[0], " ");
             AddTextMenuEntry(&gameMenu[0], "EXIT GAME");
@@ -746,7 +844,7 @@ void SetTextMenu(int sm)
             SetupTextMenu(&gameMenu[1], 0);
 
             char buffer[0x100];
-            for (int m = 0; m < modList.size(); ++m) {
+            for (int m = 0; m < (int)modList.size(); ++m) {
                 StrCopy(buffer, modList[m].name.c_str());
                 StrAdd(buffer, ": ");
                 StrAdd(buffer, modList[m].active ? "  Active" : "Inactive");
@@ -755,7 +853,7 @@ void SetTextMenu(int sm)
             }
 
             gameMenu[1].alignment      = 1;
-            gameMenu[1].selectionCount = 3;
+            gameMenu[1].selectionCount = 1;
             gameMenu[1].selection1     = 0;
             if (gameMenu[1].rowCount > 18)
                 gameMenu[1].visibleRowCount = 18;
@@ -767,6 +865,49 @@ void SetTextMenu(int sm)
             gameMenu[1].timer            = 0;
             gameMenu[1].visibleRowOffset = 0;
             break;
+#if RETRO_PLATFORM == RETRO_PS3
+        case DEVMENU_MODINSTALL:
+            SetupTextMenu(&gameMenu[0], 0);
+            AddTextMenuEntry(&gameMenu[0], "INSTALL MODS");
+            SetupTextMenu(&gameMenu[1], 0);
+
+            InitModInstallList();
+
+            if (modInstallList.size() > 0) {
+                for (int m = 0; m < (int)modInstallList.size(); ++m) {
+                    AddTextMenuEntry(&gameMenu[1], modInstallList[m].name.c_str());
+                    gameMenu[1].entryHighlight[m] = false;
+                }
+            }
+            else {
+                AddTextMenuEntry(&gameMenu[1], "NO MODS FOUND");
+            }
+
+            gameMenu[1].alignment      = 1;
+            gameMenu[1].selectionCount = 1;
+            gameMenu[1].selection1     = 0;
+            if (gameMenu[1].rowCount > 18)
+                gameMenu[1].visibleRowCount = 18;
+            else
+                gameMenu[1].visibleRowCount = 0;
+
+            gameMenu[0].alignment        = 2;
+            gameMenu[0].selectionCount   = 1;
+            gameMenu[1].timer            = 0;
+            gameMenu[1].visibleRowOffset = 0;
+            break;
+        case DEVMENU_MODINSTALLING:
+            SetupTextMenu(&gameMenu[0], 0);
+            AddTextMenuEntry(&gameMenu[0], "INSTALLING MOD");
+            SetupTextMenu(&gameMenu[1], 0);
+            AddTextMenuEntry(&gameMenu[1], "PLEASE WAIT...");
+            gameMenu[0].alignment      = 2;
+            gameMenu[1].alignment      = 2;
+            gameMenu[0].selectionCount = 1;
+            gameMenu[1].selectionCount = 1;
+            gameMenu[1].timer          = 0;
+            break;
+#endif
 #endif
     }
 }

@@ -19,6 +19,45 @@ int bufferPosition    = 0;
 int virtualFileOffset = 0;
 bool useEncryption    = false;
 byte packID           = 0;
+
+#if RETRO_PLATFORM == RETRO_PS3
+#include <sys/ppu_thread.h>
+#include <sys/synchronization.h>
+sys_mutex_t readerMutex = 0;
+bool readerMutexCreated = false;
+
+void InitReader() {
+    if (readerMutexCreated) return;
+    PrintLog("InitReader: Creating recursive mutex...");
+    sys_mutex_attribute_t mutexAttr;
+    sys_mutex_attribute_initialize(mutexAttr);
+    mutexAttr.attr_recursive = SYS_SYNC_RECURSIVE;
+    mutexAttr.name[0] = 0;
+    int ret = sys_mutex_create(&readerMutex, &mutexAttr);
+    if (ret == CELL_OK) {
+        PrintLog("InitReader: Mutex created (ID: %d)", readerMutex);
+        readerMutexCreated = true;
+    } else {
+        PrintLog("InitReader: FAILED to create mutex (0x%08X)", ret);
+    }
+}
+
+void LockReader() {
+    if (!readerMutexCreated) return;
+    int ret = sys_mutex_lock(readerMutex, 0);
+    if (ret != CELL_OK) {
+        PrintLog("LockReader: Failed! (0x%08X)", ret);
+    }
+}
+
+void UnlockReader() {
+    if (!readerMutexCreated) return;
+    int ret = sys_mutex_unlock(readerMutex);
+    if (ret != CELL_OK) {
+        PrintLog("UnlockReader: Failed! (0x%08X)", ret);
+    }
+}
+#endif
 byte eStringPosA;
 byte eStringPosB;
 byte eStringNo;
@@ -30,6 +69,10 @@ FileIO *cFileHandle = nullptr;
 
 bool CheckRSDKFile(const char *filePath)
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    LockReader();
+#endif
+
     FileInfo info;
 
     char filePathBuffer[0x100];
@@ -47,8 +90,12 @@ bool CheckRSDKFile(const char *filePath)
         byte buf          = 0;
         for (int i = 0; i < 6; ++i) {
             fRead(&buf, 1, 1, cFileHandle);
-            if (buf != signature[i])
+            if (buf != signature[i]) {
+#if RETRO_PLATFORM == RETRO_PS3
+                UnlockReader();
+#endif
                 return false;
+            }
         }
 
         Engine.usingDataFile = false;
@@ -94,9 +141,15 @@ bool CheckRSDKFile(const char *filePath)
         PrintLog("loaded datapack '%s'", filePathBuffer);
 
         rsdkContainer.packCount++;
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
+#endif
         return true;
     }
     else {
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
+#endif
         Engine.usingDataFile = false;
 #if !RETRO_USE_ORIGINAL_CODE
         Engine.usingDataFile_Config = false;
@@ -115,6 +168,9 @@ bool CheckRSDKFile(const char *filePath)
 #if !RETRO_USE_ORIGINAL_CODE
 int CheckFileInfo(const char *filepath)
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    LockReader();
+#endif
     char pathBuf[0x100];
     StrCopy(pathBuf, filepath);
     uint hash[4];
@@ -134,8 +190,14 @@ int CheckFileInfo(const char *filepath)
         if (!match)
             continue;
 
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
+#endif
         return f;
     }
+#if RETRO_PLATFORM == RETRO_PS3
+    UnlockReader();
+#endif
     return -1;
 }
 
@@ -152,6 +214,9 @@ int preloadedSize  = 0;
 
 bool LoadFile(const char *filePath, FileInfo *fileInfo)
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    LockReader();
+#endif
     MEM_ZEROP(fileInfo);
 
     CloseFile();
@@ -187,6 +252,9 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
         }
 
         PrintLog("Loaded Preloaded File '%s'", filePath);
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
+#endif
         return true;
     }
 
@@ -297,6 +365,9 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
 
             Engine.usingDataFile = true;
 
+#if RETRO_PLATFORM == RETRO_PS3
+            UnlockReader();
+#endif
             return true;
         }
 #else
@@ -364,6 +435,9 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
                 fileInfo->usingDataPack     = true;
                 PrintLog("Loaded Data File '%s'", filePath);
 
+#if RETRO_PLATFORM == RETRO_PS3
+                UnlockReader();
+#endif
                 return true;
             }
             else {
@@ -372,6 +446,9 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
         }
 #endif
         PrintLog("Couldn't load file '%s'", filePath);
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
+#endif
         return false;
     }
     else {
@@ -381,6 +458,9 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
         cFileHandle = fOpen(fileInfo->fileName, "rb");
         if (!cFileHandle) {
             PrintLog("Couldn't load file '%s'", filePath);
+#if RETRO_PLATFORM == RETRO_PS3
+            UnlockReader();
+#endif
             return false;
         }
         virtualFileOffset = 0;
@@ -401,6 +481,9 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
 #endif
 
         PrintLog("Loaded File '%s'", filePath);
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
+#endif
         return true;
     }
 }

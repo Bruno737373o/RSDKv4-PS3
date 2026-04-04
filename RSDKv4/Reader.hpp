@@ -38,6 +38,14 @@
 #define RETRO_PACK_COUNT     (0x4)
 
 #if RETRO_PLATFORM == RETRO_PS3
+#include <sys/synchronization.h>
+extern sys_mutex_t readerMutex;
+extern bool readerMutexCreated;
+
+void InitReader();
+void LockReader();
+void UnlockReader();
+
 #define RETRO_READER_BUFSIZE (0x20000)
 #else
 #define RETRO_READER_BUFSIZE (0x2000)
@@ -140,6 +148,9 @@ int CheckFileInfo(const char *filepath);
 bool LoadFile(const char *filePath, FileInfo *fileInfo);
 inline bool CloseFile()
 {
+#if RETRO_PLATFORM == RETRO_PS3
+    LockReader();
+#endif
     preloadedPtr = nullptr;
     preloadedSize = 0;
 
@@ -160,6 +171,9 @@ inline bool CloseFile()
     }
 
     cFileHandle = NULL;
+#if RETRO_PLATFORM == RETRO_PS3
+    UnlockReader();
+#endif
     return result;
 }
 

@@ -445,6 +445,7 @@ void CopyDirectory(const char *src, const char *dst, int depth)
                     if (dstFile) {
                         size_t bytesRead;
                         while ((bytesRead = fread(copyBuffer, 1, sizeof(copyBuffer), srcFile)) > 0) {
+                            cellSysutilCheckCallback();
                             fwrite(copyBuffer, 1, bytesRead, dstFile);
                         }
                         fclose(dstFile);
@@ -502,18 +503,22 @@ void InitModInstallList()
 {
     modInstallList.clear();
 
-    const char *searchPaths[] = {
-        "/dev_usb000",
-        "/dev_usb001",
-        "/dev_usb002",
-        "/dev_usb003",
-        "/dev_usb004",
-		"/dev_usb005",
-        "/dev_usb006"
-    };
+    std::vector<std::string> searchPaths;
+    searchPaths.push_back("/dev_hdd0/packages");
+    for (int i = 0; i <= 6; ++i) {
+        char usbPath[32];
+        snprintf(usbPath, sizeof(usbPath), "/dev_usb00%d", i);
+        searchPaths.push_back(usbPath);
 
-    for (int i = 0; i < 6; ++i) {
-        const char *packagesPath = searchPaths[i];
+        snprintf(usbPath, sizeof(usbPath), "/dev_usb00%d/mods", i);
+        searchPaths.push_back(usbPath);
+
+        snprintf(usbPath, sizeof(usbPath), "/dev_usb00%d/MODS", i);
+        searchPaths.push_back(usbPath);
+    }
+
+    for (int i = 0; i < (int)searchPaths.size(); ++i) {
+        const char *packagesPath = searchPaths[i].c_str();
         DIR *dir = opendir(packagesPath);
         
         if (dir) {

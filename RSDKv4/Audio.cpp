@@ -57,8 +57,9 @@ SDL_AudioSpec audioDeviceFormat;
 
 #include "AudioPS3.hpp"
 #include <altivec.h>
+#include <sys/synchronization.h>
 
-sys_lwmutex_t audioMutex __attribute__((aligned(16)));
+sys_mutex_t audioMutex = 0;
 
 #define AUDIO_SAMPLES   (512)
 #ifndef AUDIO_FREQUENCY
@@ -79,10 +80,16 @@ int InitAudioPlayback()
 #if RETRO_PLATFORM == RETRO_PS3
     static bool mutex_created = false;
     if (!mutex_created) {
-        sys_lwmutex_attribute_t mutexAttr;
-        sys_lwmutex_attribute_initialize(mutexAttr);
-        sys_lwmutex_create(&audioMutex, &mutexAttr);
-        mutex_created = true;
+        sys_mutex_attribute_t mutexAttr;
+        sys_mutex_attribute_initialize(mutexAttr);
+        mutexAttr.attr_recursive = SYS_SYNC_RECURSIVE;
+        mutexAttr.name[0] = 0;
+        int ret = sys_mutex_create(&audioMutex, &mutexAttr);
+        if (ret == CELL_OK) {
+            mutex_created = true;
+        } else {
+            PrintLog("Failed to create audio mutex: 0x%08X", ret);
+        }
     }
 #endif
 
@@ -737,6 +744,7 @@ void ProcessAudioMixing(Sint32 *dst, const Sint16 *src, int len, int volume, sby
 
 void LoadMusic(void *userdata)
 {
+    PrintLog("LoadMusic: Processing loop started (track: %d)", currentMusicTrack);
     while (currentMusicTrack >= 0) {
         int oldStreamID = currentStreamIndex;
 
@@ -759,6 +767,10 @@ void LoadMusic(void *userdata)
 #endif
 
         FileInfo info;
+#if RETRO_PLATFORM == RETRO_PS3
+        PrintLog("Music Thread: Locking Reader for %s", musicTracks[currentMusicTrack].fileName);
+        LockReader();
+#endif
         if (LoadFile(musicTracks[currentMusicTrack].fileName, &info)) {
 #if RETRO_PLATFORM == RETRO_PS3
             openTime = GetSystemTime();
@@ -772,6 +784,10 @@ void LoadMusic(void *userdata)
 
             FileRead(streamFile[currentStreamIndex].buffer, musFile->vsize);
             CloseFile();
+#if RETRO_PLATFORM == RETRO_PS3
+            UnlockReader();
+            PrintLog("Music Thread: Reader Unlocked");
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS3
             readTime = GetSystemTime();
@@ -795,6 +811,14 @@ void LoadMusic(void *userdata)
             if (error == 0) {
                 strmInfo->vorbBitstream = -1;
                 strmInfo->vorbisFile.vi = ov_info(&strmInfo->vorbisFile, -1);
+                if (!strmInfo->vorbisFile.vi) {
+                    PrintLog("Music load FAILED: ov_info returned NULL");
+                    ov_clear(&strmInfo->vorbisFile);
+                    musicStatus = MUSIC_STOPPED;
+                    currentMusicTrack = -1;
+                    UnlockAudioDevice();
+                    continue;
+                }
 
                 samples = (unsigned long long)ov_pcm_total(&strmInfo->vorbisFile, -1);
 
@@ -806,9 +830,9 @@ void LoadMusic(void *userdata)
 #endif
 
 #if RETRO_USING_SDL1
-                playbackInfo->spec.format   = AUDIO_S16;
-                playbackInfo->spec.channels = playbackInfo->vorbisFile.vi->channels;
-                playbackInfo->spec.freq     = (int)playbackInfo->vorbisFile.vi->rate;
+                strmInfo->spec.format   = AUDIO_S16;
+                strmInfo->spec.channels = strmInfo->vorbisFile.vi->channels;
+                strmInfo->spec.freq     = (int)strmInfo->vorbisFile.vi->rate;
 #endif
 
 #if RETRO_PLATFORM == RETRO_PS3
@@ -821,7 +845,9 @@ void LoadMusic(void *userdata)
 #endif
 
                 if (musicStartPos) {
-                    uint oldPos = (uint)ov_pcm_tell(&streamInfo[oldStreamID].vorbisFile);
+                    uint oldPos = 0;
+                    if (streamInfo[oldStreamID].loaded)
+                        oldPos = (uint)ov_pcm_tell(&streamInfo[oldStreamID].vorbisFile);
 
                     float newPos  = oldPos * ((float)musicRatio * 0.0001f); // 8,000 == 0.8, 10,000 == 1.0 (ratio / 10,000)
                     musicStartPos = (int)fmod((double)newPos, (double)samples);
@@ -865,6 +891,10 @@ void LoadMusic(void *userdata)
             }
         }
         else {
+#if RETRO_PLATFORM == RETRO_PS3
+            UnlockReader();
+            PrintLog("Music Thread: Reader Unlocked (Load FAILED)");
+#endif
             musicStatus       = MUSIC_STOPPED;
             currentMusicTrack = -1;
         }
@@ -912,7 +942,9 @@ void SwapMusicTrack(const char *filePath, byte trackID, uint loopPoint, uint rat
 #if RETRO_PLATFORM == RETRO_PS3
 static volatile bool musicThreadRunning = false;
 void LoadMusic_Thread(uint64_t arg) {
+    PrintLog("Music Thread: Started");
     LoadMusic(NULL);
+    PrintLog("Music Thread: Finished");
     musicThreadRunning = false;
     sys_ppu_thread_exit(0);
 }
@@ -923,24 +955,32 @@ bool PlayMusic(int track, int musStartPos)
     if (!audioEnabled)
         return false;
 
+    if (track < 0 || track >= TRACK_COUNT) {
+        PrintLog("PlayMusic: INVALID track %d requested", track);
+        StopMusic(true);
+        currentMusicTrack = -1;
+        return false;
+    }
+
+    PrintLog("PlayMusic: Track %d requested (pos: %d, file: %s)", track, musStartPos, musicTracks[track].fileName);
+
     if (musicTracks[track].fileName[0]) {
         if (musicStatus != MUSIC_LOADING && !musicThreadRunning) {
-            if (track < 0 || track >= TRACK_COUNT) {
-                StopMusic(true);
-                currentMusicTrack = -1;
-                return false;
-            }
             musicStartPos     = musStartPos;
             currentMusicTrack = track;
             musicStatus       = MUSIC_LOADING;
 #if RETRO_PLATFORM == RETRO_PS3
+            PrintLog("PlayMusic: Starting load thread for track %d", track);
             musicLoadStartTime = GetSystemTime();
             musicThreadRunning = true;
             sys_ppu_thread_t thread;
-            int ret = sys_ppu_thread_create(&thread, LoadMusic_Thread, 0, 100, 0x10000, 0, "MusicLoadThread");
+            int ret = sys_ppu_thread_create(&thread, LoadMusic_Thread, 0, 1500, 0x40000, 0, "MusicLoadThread");
             if (ret != CELL_OK) {
+                PrintLog("PlayMusic: Thread creation FAILED (0x%08X), loading synchronously", ret);
                 musicThreadRunning = false;
                 LoadMusic(NULL);
+            } else {
+                PrintLog("PlayMusic: Load thread created successfully (Priority: 1500, Stack: 256KB)");
             }
 #else
             LoadMusic(NULL);
@@ -950,7 +990,7 @@ bool PlayMusic(int track, int musStartPos)
         else {
             nextMusicTrack    = track;
             nextMusicStartPos = musStartPos;
-            PrintLog("Music queued: track %d", track);
+            PrintLog("Music queued: track %d (Status: %d, ThreadRunning: %d)", track, musicStatus, (int)musicThreadRunning);
             return true;
         }
     }
@@ -985,7 +1025,16 @@ void LoadSfx(char *filePath, byte sfxID)
     StrCopy(fullPath, "Data/SoundFX/");
     StrAdd(fullPath, filePath);
 
+#if RETRO_PLATFORM == RETRO_PS3
+    LockReader();
+#endif
     if (LoadFile(fullPath, &info)) {
+        if (sfxList[sfxID].loaded && sfxList[sfxID].buffer) {
+            free(sfxList[sfxID].buffer);
+            sfxList[sfxID].buffer = NULL;
+            sfxList[sfxID].loaded = false;
+        }
+
 #if !RETRO_USE_ORIGINAL_CODE
         byte type = fullPath[StrLength(fullPath) - 3];
 #if RETRO_USING_SDL1 || RETRO_USING_SDL2
@@ -1248,11 +1297,18 @@ void LoadSfx(char *filePath, byte sfxID)
 
             // Load OGG into a temporary structure instead of sharing with music slots
             StreamFile *sfxFile = (StreamFile*)memalign(16, sizeof(StreamFile));
-            if (!sfxFile) { free(vf); return; }
+            if (!sfxFile) {
+                free(vf);
+                return;
+            }
             memset(sfxFile, 0, sizeof(StreamFile));
 
             sfxFile->buffer = (byte*)memalign(16, info.vfileSize);
-            if (!sfxFile->buffer) { free(sfxFile); free(vf); return; }
+            if (!sfxFile->buffer) {
+                free(sfxFile);
+                free(vf);
+                return;
+            }
 
             sfxFile->vpos = 0;
             sfxFile->vsize = (int)info.vfileSize;
@@ -1275,6 +1331,13 @@ void LoadSfx(char *filePath, byte sfxID)
             }
 
             vinfo = ov_info(vf, -1);
+            if (!vinfo) {
+                ov_clear(vf);
+                free(vf);
+                if (sfxFile->buffer) free(sfxFile->buffer);
+                free(sfxFile);
+                return;
+            }
             samples = (long)ov_pcm_total(vf, -1);
 
             int channels = vinfo->channels;
@@ -1366,6 +1429,9 @@ void LoadSfx(char *filePath, byte sfxID)
                 ov_clear(vf);
                 free(vf);
                 PrintLog("failed to read ogg sfx!");
+#if RETRO_PLATFORM == RETRO_PS3
+                UnlockReader();
+#endif
                 return;
             }
 
@@ -1378,6 +1444,9 @@ void LoadSfx(char *filePath, byte sfxID)
             CloseFile();
             PrintLog("Sfx format not supported!");
         }
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
+#endif
 #else
 #if !RETRO_USING_SDL1 && !RETRO_USING_SDL2
         else {
@@ -1387,6 +1456,11 @@ void LoadSfx(char *filePath, byte sfxID)
         }
 #endif
 #endif
+#endif
+    }
+    else {
+#if RETRO_PLATFORM == RETRO_PS3
+        UnlockReader();
 #endif
     }
 }

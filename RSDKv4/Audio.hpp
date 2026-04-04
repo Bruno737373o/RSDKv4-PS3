@@ -15,11 +15,12 @@
 #define MAX_VOLUME (100)
 
 #if RETRO_PLATFORM == RETRO_PS3
-#define MUSBUFFER_SIZE   (0x1000000)
+#define MUSBUFFER_SIZE   (0xC00000)
+#define STREAMFILE_COUNT (2)
 #else
 #define MUSBUFFER_SIZE   (0x200000)
-#endif
 #define STREAMFILE_COUNT (4)
+#endif
 
 #if RETRO_PLATFORM == RETRO_PS3
 #define MIX_BUFFER_SAMPLES (2048)
@@ -38,9 +39,9 @@
 #include "ogg/ogg.h"
 #include "tremor/ivorbiscodec.h"
 #include "tremor/ivorbisfile.h"
-extern sys_lwmutex_t audioMutex;
-#define LockAudioDevice()   sys_lwmutex_lock(&audioMutex, 0xFFFFFFFF)
-#define UnlockAudioDevice() sys_lwmutex_unlock(&audioMutex)
+extern sys_mutex_t audioMutex;
+#define LockAudioDevice()   sys_mutex_lock(audioMutex, 0)
+#define UnlockAudioDevice() sys_mutex_unlock(audioMutex)
 
 #ifndef RETROENGINE_H
 // Standard types and macros for Audio.hpp if RetroEngine.hpp isn't included yet

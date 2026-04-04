@@ -58,11 +58,11 @@ static void audio_event_loop(uint64_t arg) {
                 }
 
                 // Use a short timeout for the lock to balance responsiveness and stability
-                if (sys_lwmutex_lock(&audioMutex, 1000) == CELL_OK) {
+                if (sys_mutex_lock(audioMutex, 1000) == CELL_OK) {
                     // ProcessAudioPlayback expects sample count (frames * channels)
                     // We start at index 8 for 16-byte alignment.
                     ProcessAudioPlayback(&ctx->input_buffer[8], INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS);
-                    sys_lwmutex_unlock(&audioMutex);
+                    sys_mutex_unlock(audioMutex);
                     ctx->input_pos = 0;
                     ctx->input_count = INPUT_BUFFER_SAMPLES + 1;
                 } else {
@@ -97,8 +97,12 @@ static void audio_event_loop(uint64_t arg) {
         }
         
         cellAudioAddData(ctx->audio_port, ctx->out_tmp, CELL_AUDIO_BLOCK_SAMPLES, 1.0);
+        continue;
+
 skip_resample:
-        (void)0;
+        // Lock busy or other error, output silence to keep hardware timing
+        memset(ctx->out_tmp, 0, sizeof(ctx->out_tmp));
+        cellAudioAddData(ctx->audio_port, ctx->out_tmp, CELL_AUDIO_BLOCK_SAMPLES, 1.0);
     }
 
     cellAudioRemoveNotifyEventQueue(key);
@@ -107,6 +111,7 @@ skip_resample:
 
 bool InitPS3Audio(uint32_t samplerate, uint32_t buffersize) {
     (void)buffersize;
+    PrintLog("InitPS3Audio: Initializing context...");
     aud_ctx = (ps3_audio_ctx_t*)calloc(1, sizeof(*aud_ctx));
     if (!aud_ctx) return false;
 
@@ -133,9 +138,9 @@ bool InitPS3Audio(uint32_t samplerate, uint32_t buffersize) {
     memset(aud_ctx->input_buffer, 0, sizeof(aud_ctx->input_buffer));
     
     // Initial fill (using index 8 for alignment)
-    if (sys_lwmutex_lock(&audioMutex, 1000000) == CELL_OK) {
+    if (sys_mutex_lock(audioMutex, 1000000) == CELL_OK) {
         ProcessAudioPlayback(&aud_ctx->input_buffer[8], INPUT_BUFFER_SAMPLES * AUDIO_CHANNELS);
-        sys_lwmutex_unlock(&audioMutex);
+        sys_mutex_unlock(audioMutex);
         aud_ctx->input_count = INPUT_BUFFER_SAMPLES + 1;
     }
 
