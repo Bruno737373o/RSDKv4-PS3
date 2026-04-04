@@ -724,16 +724,15 @@ void SetScreenDimensions(int width, int height)
     displaySettings.unknown1 = 16;
     touchHeightF             = height;
     // displaySettings.maxWidth = 424;
-    double aspect    = SCREEN_XSIZE_CONFIG / (float)SCREEN_YSIZE;
-    SCREEN_XSIZE_F   = SCREEN_YSIZE * aspect;
-    SCREEN_CENTERX_F = aspect * SCREEN_CENTERY;
-    SetPerspectiveMatrix(SCREEN_YSIZE * aspect, SCREEN_YSIZE_F, 0.0, 1000.0);
+    SCREEN_XSIZE_F   = SCREEN_XSIZE_CONFIG;
+    SCREEN_CENTERX_F = SCREEN_XSIZE_CONFIG / 2.0;
+    SetPerspectiveMatrix(SCREEN_XSIZE_CONFIG, SCREEN_YSIZE_F, 0.0, 1000.0);
 #if RETRO_USING_OPENGL
     glViewport(displaySettings.offsetX, 0, displaySettings.width, displaySettings.height);
 #endif
 
     Engine.useHighResAssets = displaySettings.height > (SCREEN_YSIZE * 2);
-    int displayWidth        = aspect * SCREEN_YSIZE;
+    int displayWidth        = SCREEN_XSIZE_CONFIG;
     // if (val > displaySettings.maxWidth)
     //    val = displaySettings.maxWidth;
 #if !RETRO_USE_ORIGINAL_CODE
@@ -747,6 +746,7 @@ void SetScreenDimensions(int width, int height)
         GLuint w, h;
         psglGetDeviceDimensions(psgl_device, &w, &h);
 
+        double aspect           = SCREEN_XSIZE_CONFIG / (float)SCREEN_YSIZE;
         displaySettings.height  = h;
         displaySettings.width   = aspect * displaySettings.height;
         displaySettings.offsetX = abs((int)w - displaySettings.width) / 2;
@@ -905,12 +905,11 @@ void SetupViewport()
     glLoadIdentity();
 #endif
 
-    double aspect    = SCREEN_XSIZE_CONFIG / (float)SCREEN_YSIZE;
-    SCREEN_XSIZE_F   = SCREEN_YSIZE * aspect;
-    SCREEN_CENTERX_F = aspect * SCREEN_CENTERY;
+    SCREEN_XSIZE_F   = SCREEN_XSIZE_CONFIG;
+    SCREEN_CENTERX_F = SCREEN_XSIZE_CONFIG / 2.0;
 
 #if RETRO_USING_OPENGL
-    glScalef(320.0f / (SCREEN_YSIZE * aspect), 1.0, 1.0);
+    glScalef(320.0f / SCREEN_XSIZE_CONFIG, 1.0, 1.0);
 #endif
 
     SetPerspectiveMatrix(90.0, 0.75, 1.0, 5000.0);
@@ -921,6 +920,7 @@ void SetupViewport()
         GLuint w, h;
         psglGetDeviceDimensions(psgl_device, &w, &h);
 
+        double aspect           = SCREEN_XSIZE_CONFIG / (float)SCREEN_YSIZE;
         displaySettings.height  = h;
         displaySettings.width   = aspect * displaySettings.height;
         displaySettings.offsetX = abs((int)w - (int)displaySettings.width) / 2;
@@ -932,7 +932,7 @@ void SetupViewport()
 #endif
     glViewport(displaySettings.offsetX, 0, displaySettings.width, displaySettings.height);
 #endif
-    int displayWidth = aspect * SCREEN_YSIZE;
+    int displayWidth = SCREEN_XSIZE_CONFIG;
 #if !RETRO_USE_ORIGINAL_CODE
     SetScreenSize(displayWidth, (displayWidth + 9) & -0x8);
 #else
