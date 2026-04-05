@@ -4,6 +4,47 @@
 #if RETRO_PLATFORM == RETRO_PS3
 #include "AudioPS3.hpp"
 #include <dirent.h>
+
+static const uint32_t crude_font[128][7] = {
+    ['D'] = { 0x1E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1E },
+    ['a'] = { 0x00, 0x00, 0x0E, 0x01, 0x0F, 0x11, 0x0F },
+    ['t'] = { 0x04, 0x04, 0x1F, 0x04, 0x04, 0x05, 0x02 },
+    ['.'] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x06 },
+    ['r'] = { 0x00, 0x00, 0x0B, 0x14, 0x10, 0x10, 0x10 },
+    ['s'] = { 0x00, 0x00, 0x0F, 0x10, 0x0E, 0x01, 0x1E },
+    ['d'] = { 0x01, 0x01, 0x0F, 0x11, 0x11, 0x11, 0x0F },
+    ['k'] = { 0x10, 0x10, 0x12, 0x14, 0x18, 0x14, 0x12 },
+    [' '] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+    ['n'] = { 0x00, 0x00, 0x16, 0x19, 0x11, 0x11, 0x11 },
+    ['o'] = { 0x00, 0x00, 0x0E, 0x11, 0x11, 0x11, 0x0E },
+    ['F'] = { 0x1F, 0x10, 0x10, 0x1E, 0x10, 0x10, 0x10 },
+    ['u'] = { 0x00, 0x00, 0x11, 0x11, 0x11, 0x13, 0x0D },
+    ['S'] = { 0x0F, 0x10, 0x10, 0x0E, 0x01, 0x01, 0x1E },
+    ['c'] = { 0x00, 0x00, 0x0E, 0x11, 0x10, 0x11, 0x0E },
+    ['i'] = { 0x04, 0x00, 0x0C, 0x04, 0x04, 0x04, 0x0E },
+    ['p'] = { 0x00, 0x00, 0x16, 0x19, 0x19, 0x16, 0x10 },
+};
+
+void DrawCrudeText(const char *text, int x, int y, uint8_t r, uint8_t g, uint8_t b)
+{
+    int startX = x;
+    while (*text) {
+        char c = *text++;
+        for (int i = 0; i < 7; i++) {
+            uint32_t row = crude_font[(uint8_t)c][i];
+            for (int j = 0; j < 5; j++) {
+                if (row & (1 << (4 - j))) {
+                    DrawRectangle(x + j, y + i, 1, 1, r, g, b, 255);
+                }
+            }
+        }
+        x += 6;
+        if (c == '\n') {
+            x = startX;
+            y += 10;
+        }
+    }
+}
 #include <cell/sysmodule.h>
 #include <netex/net.h>
 #include <netex/libnetctl.h>
@@ -462,44 +503,16 @@ void RetroEngine::Init()
 #if RETRO_PLATFORM == RETRO_PS3
     StrCopy(dest, gamePath);
     StrAdd(dest, Engine.dataFile[0]);
-    if (!CheckRSDKFile(dest)) {
+    bool rsdkFound = CheckRSDKFile(dest);
+    if (!rsdkFound) {
         StrCopy(dest, BASE_PATH);
         StrAdd(dest, Engine.dataFile[0]);
-        CheckRSDKFile(dest);
+        rsdkFound = CheckRSDKFile(dest);
     }
-
-    if (InitRenderDevice()) {
-        textMenuSurfaceNo = SURFACE_COUNT - 1;
-        if (LoadGIFFile("Data/Game/SystemText.gif", textMenuSurfaceNo)) {
-            SetPaletteEntry(-1, 0xF0, 0x00, 0x00, 0x00);
-            SetPaletteEntry(-1, 0xFF, 0xFF, 0xFF, 0xFF);
-
-            SetupTextMenu(&gameMenu[0], 0);
-            gameMenu[0].alignment      = 2;
-            gameMenu[0].selectionCount = 1;
-            AddTextMenuEntry(&gameMenu[0], "Loading Data.rsdk and Scripts Decompilation folder");
-
-            for (int i = 0; i < 3; ++i) {
-                ClearScreen(0xF0);
-                DrawTextMenu(&gameMenu[0], SCREEN_XSIZE / 2, (SCREEN_YSIZE / 2) - 8);
-                TransferRetroBuffer();
-                RenderRetroBuffer(255, 160.0f);
-                RenderScene();
-#if RETRO_USING_OPENGL
-                psglSwap();
-#endif
-            }
-        }
-    }
-#endif
-
-#if RETRO_USE_MOD_LOADER
-    InitMods();
-#endif
 
     // Check if Scripts folder exists in the same directory as Data.rsdk
     char scriptsPath[0x100];
-#if RETRO_PLATFORM == RETRO_PS3
+    bool scriptsFound = false;
     // Check gamePath (Game Data Utility) first
     sprintf(scriptsPath, "%sScripts", gamePath);
     DIR *scriptsDir = opendir(scriptsPath);
@@ -517,9 +530,88 @@ void RetroEngine::Init()
         }
     }
     if (scriptsDir) {
-        forceUseScripts = true;
+        scriptsFound = true;
         closedir(scriptsDir);
-        PrintLog("External Scripts folder detected at %s, forcing TxtScripts mode.", scriptsPath);
+    }
+
+    if (InitRenderDevice()) {
+        textMenuSurfaceNo = SURFACE_COUNT - 1;
+        bool gifLoaded = LoadGIFFile("Data/Game/SystemText.gif", textMenuSurfaceNo);
+        
+        // Ensure palette and active pointers are set up for early rendering
+        SetPaletteEntry(-1, 0x00, 0x00, 0x00, 0x00); // Black
+        SetPaletteEntry(-1, 0x00, 0x00, 0x00, 0x00); // Black
+        SetPaletteEntry(-1, 0x00, 0x00, 0x00, 0x00); // Black
+        SetPaletteEntry(-1, 0xF0, 0x00, 0x00, 0x00); // Black (for ClearScreen)
+        SetPaletteEntry(-1, 0xFF, 0xFF, 0xFF, 0xFF); // White (for Text)
+        // Set all other common indices to white just in case the font uses them
+        for (int i = 1; i < 240; ++i) {
+            if (i != 0x01 && i != 0x02 && i != 0xF0)
+                SetPaletteEntry(-1, i, 0xFF, 0xFF, 0xFF);
+        }
+        
+        activePalette = fullPalette[0];
+        activePalette32 = fullPalette32[0];
+        memset(gfxLineBuffer, 0, SCREEN_YSIZE);
+
+        if (gifLoaded) {
+            SetupTextMenu(&gameMenu[0], 0);
+            gameMenu[0].alignment      = 2;
+            gameMenu[0].selectionCount = 1;
+
+            if (rsdkFound && scriptsFound) {
+                AddTextMenuEntry(&gameMenu[0], "Loading Data.rsdk and Scripts Decompilation folder");
+            }
+            else if (!rsdkFound) {
+                AddTextMenuEntry(&gameMenu[0], "Data.rsdk no Found");
+            }
+            else {
+                AddTextMenuEntry(&gameMenu[0], "Scripts Decompilation folder no Found");
+            }
+        }
+
+        uint64_t startTime = sys_time_get_system_time();
+        uint64_t duration  = (rsdkFound && scriptsFound) ? 1000000 : 3000000; // 1s if found, 3s if not
+        
+        while (sys_time_get_system_time() - startTime < duration) {
+            cellSysutilCheckCallback();
+            
+            // Background color: Black
+            ClearScreen(0xF0);
+            
+            if (gifLoaded) {
+                DrawTextMenu(&gameMenu[0], SCREEN_XSIZE / 2, (SCREEN_YSIZE / 2) - 8);
+            }
+            else {
+                if (!rsdkFound)
+                    DrawCrudeText("Data.rsdk no Found", (SCREEN_XSIZE / 2) - 54, (SCREEN_YSIZE / 2) - 4, 255, 255, 255);
+                else if (!scriptsFound)
+                    DrawCrudeText("Scripts Decompilation folder no Found", (SCREEN_XSIZE / 2) - 48, (SCREEN_YSIZE / 2) - 4, 255, 255, 255);
+            }
+            
+            TransferRetroBuffer();
+            RenderRetroBuffer(255, 160.0f);
+            RenderScene();
+#if RETRO_USING_OPENGL
+            psglSwap();
+#endif
+        }
+
+        if (!rsdkFound || !scriptsFound) {
+            running = false;
+            return;
+        }
+    }
+#endif
+
+#if RETRO_USE_MOD_LOADER
+    InitMods();
+#endif
+
+#if RETRO_PLATFORM == RETRO_PS3
+    if (scriptsFound) {
+        forceUseScripts = true;
+        PrintLog("External Scripts folder detected, forcing TxtScripts mode.");
     }
 #endif
 #if RETRO_USE_NETWORKING
