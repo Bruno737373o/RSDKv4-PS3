@@ -59,6 +59,9 @@ bool bilinearScaling = false;
 
 int InitRenderDevice()
 {
+    if (windowCreated)
+        return 1;
+
     char gameTitle[0x40];
 
     sprintf(gameTitle, "%s%s", Engine.gameWindowText, Engine.usingDataFile_Config ? "" : " (Using Data Folder)");
@@ -395,6 +398,7 @@ int InitRenderDevice()
 
     InitInputDevices();
 
+    windowCreated = true;
     return 1;
 }
 void FlipScreen()
@@ -623,6 +627,7 @@ void FlipScreen()
 }
 void ReleaseRenderDevice(bool refresh)
 {
+    windowCreated = false;
     if (!refresh) {
         ClearMeshData();
         ClearTextures(false);

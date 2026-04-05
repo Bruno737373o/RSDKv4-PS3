@@ -456,7 +456,43 @@ void RetroEngine::Init()
     Engine.usingBytecode = false;
 
 #if !RETRO_USE_ORIGINAL_CODE
+    char dest[0x200];
     InitUserdata();
+
+#if RETRO_PLATFORM == RETRO_PS3
+    StrCopy(dest, gamePath);
+    StrAdd(dest, Engine.dataFile[0]);
+    if (!CheckRSDKFile(dest)) {
+        StrCopy(dest, BASE_PATH);
+        StrAdd(dest, Engine.dataFile[0]);
+        CheckRSDKFile(dest);
+    }
+
+    if (InitRenderDevice()) {
+        textMenuSurfaceNo = SURFACE_COUNT - 1;
+        if (LoadGIFFile("Data/Game/SystemText.gif", textMenuSurfaceNo)) {
+            SetPaletteEntry(-1, 0xF0, 0x00, 0x00, 0x00);
+            SetPaletteEntry(-1, 0xFF, 0xFF, 0xFF, 0xFF);
+
+            SetupTextMenu(&gameMenu[0], 0);
+            gameMenu[0].alignment      = 2;
+            gameMenu[0].selectionCount = 1;
+            AddTextMenuEntry(&gameMenu[0], "Loading Data.rsdk and Scripts Decompilation folder");
+
+            for (int i = 0; i < 3; ++i) {
+                ClearScreen(0xF0);
+                DrawTextMenu(&gameMenu[0], SCREEN_XSIZE / 2, (SCREEN_YSIZE / 2) - 8);
+                TransferRetroBuffer();
+                RenderRetroBuffer(255, 160.0f);
+                RenderScene();
+#if RETRO_USING_OPENGL
+                psglSwap();
+#endif
+            }
+        }
+    }
+#endif
+
 #if RETRO_USE_MOD_LOADER
     InitMods();
 #endif
@@ -490,7 +526,6 @@ void RetroEngine::Init()
     InitNetwork();
 #endif
 
-    char dest[0x200];
 #if RETRO_PLATFORM == RETRO_UWP
     static char resourcePath[256] = { 0 };
 
@@ -510,13 +545,7 @@ void RetroEngine::Init()
     disableFocusPause = 0; // focus pause is ALWAYS enabled.
     CheckRSDKFile(dest);
 #elif RETRO_PLATFORM == RETRO_PS3
-    StrCopy(dest, gamePath);
-    StrAdd(dest, Engine.dataFile[0]);
-    if (!CheckRSDKFile(dest)) {
-        StrCopy(dest, BASE_PATH);
-        StrAdd(dest, Engine.dataFile[0]);
-        CheckRSDKFile(dest);
-    }
+    // Already checked above
 #else
     StrCopy(dest, BASE_PATH);
     StrAdd(dest, Engine.dataFile[0]);
