@@ -510,24 +510,14 @@ void RetroEngine::Init()
         rsdkFound = CheckRSDKFile(dest);
     }
 
-    // Check if Scripts folder exists in the same directory as Data.rsdk
+    // Check if Scripts folder exists in BASE_PATH
     char scriptsPath[0x100];
     bool scriptsFound = false;
-    // Check gamePath (Game Data Utility) first
-    sprintf(scriptsPath, "%sScripts", gamePath);
+    sprintf(scriptsPath, "%sScripts", BASE_PATH);
     DIR *scriptsDir = opendir(scriptsPath);
     if (!scriptsDir) {
-        sprintf(scriptsPath, "%sscripts", gamePath);
+        sprintf(scriptsPath, "%sscripts", BASE_PATH);
         scriptsDir = opendir(scriptsPath);
-    }
-    // Then check BASE_PATH
-    if (!scriptsDir) {
-        sprintf(scriptsPath, "%sScripts", BASE_PATH);
-        scriptsDir = opendir(scriptsPath);
-        if (!scriptsDir) {
-            sprintf(scriptsPath, "%sscripts", BASE_PATH);
-            scriptsDir = opendir(scriptsPath);
-        }
     }
     if (scriptsDir) {
         scriptsFound = true;

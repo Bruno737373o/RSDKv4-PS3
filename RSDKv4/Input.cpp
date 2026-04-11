@@ -361,11 +361,9 @@ void ProcessInput()
                 if (d2 & CELL_PAD_CTRL_CROSS)    hold[INPUT_BUTTONA] = true;
                 if (d2 & CELL_PAD_CTRL_CIRCLE)   hold[INPUT_BUTTONB] = true;
                 if (d2 & CELL_PAD_CTRL_SQUARE)   hold[INPUT_BUTTONC] = true;
-                if (d2 & CELL_PAD_CTRL_TRIANGLE) hold[INPUT_BUTTONX] = true;
-                if (d2 & CELL_PAD_CTRL_L1)       hold[INPUT_BUTTONL] = true;
-                if (d2 & CELL_PAD_CTRL_R1)       hold[INPUT_BUTTONR] = true;
-                if (d2 & CELL_PAD_CTRL_L2)       hold[INPUT_BUTTONY] = true;
-                if (d2 & CELL_PAD_CTRL_R2)       hold[INPUT_BUTTONZ] = true;
+                if (d2 & CELL_PAD_CTRL_L1)       hold[INPUT_BUTTONX] = true;
+                if (d2 & CELL_PAD_CTRL_R1)       hold[INPUT_BUTTONY] = true;
+                if (d2 & CELL_PAD_CTRL_TRIANGLE) hold[INPUT_BUTTONZ] = true;
 
                 if (d1 & CELL_PAD_CTRL_START)    hold[INPUT_START] = true;
                 if (d1 & CELL_PAD_CTRL_SELECT)   hold[INPUT_SELECT] = true;
@@ -377,13 +375,6 @@ void ProcessInput()
                 if (ly > 176) hold[INPUT_DOWN]  = true;
                 if (lx < 80)  hold[INPUT_LEFT]  = true;
                 if (lx > 176) hold[INPUT_RIGHT] = true;
-
-                int rx = (int)(padData.button[CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_X] & 0xFF);
-                int ry = (int)(padData.button[CELL_PAD_BTN_OFFSET_ANALOG_RIGHT_Y] & 0xFF);
-                if (ry < 80)  hold[INPUT_UP]    = true;
-                if (ry > 176) hold[INPUT_DOWN]  = true;
-                if (rx < 80)  hold[INPUT_LEFT]  = true;
-                if (rx > 176) hold[INPUT_RIGHT] = true;
             }
         }
     }
@@ -564,7 +555,7 @@ void ProcessInput()
 
     // Cheat code detection (Up, Up, Down, Down, Left, Right, Left, Right, Square)
     // We use the inputDevice array, which contains the combined press state for all virtual buttons.
-    // Note: INPUT_BUTTONA corresponds to the "X" button on PS3.
+    // Note: INPUT_BUTTONA corresponds to the "SQUARE" button on PS3.
     static int cheatState = 0;
     static const int cheatSequence[] = { INPUT_UP,    INPUT_DOWN,  INPUT_LEFT,
                                          INPUT_RIGHT, INPUT_BUTTONA };

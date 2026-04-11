@@ -306,7 +306,19 @@ bool LoadFile(const char *filePath, FileInfo *fileInfo)
     if (true) {
 #endif
         char pathBuf[0x100];
+#if RETRO_PLATFORM == RETRO_PS3
+        const char *workPath = BASE_PATH;
+        if (strncmp(filePathBuf, "Bytecode", 8) == 0)
+            workPath = gamePath;
+
+        int pathLen = StrLength(workPath);
+        if (pathLen > 0 && workPath[pathLen - 1] == '/')
+            sprintf(pathBuf, "%s%s", workPath, filePathBuf);
+        else
+            sprintf(pathBuf, "%s/%s", workPath, filePathBuf);
+#else
         sprintf(pathBuf, "%s/%s", gamePath, filePathBuf);
+#endif
         sprintf(filePathBuf, "%s", pathBuf);
     }
 #endif

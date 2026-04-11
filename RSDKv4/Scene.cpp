@@ -86,6 +86,79 @@ bool loadGlobalScripts = false; // stored here so I can use it later
 int globalObjCount     = 0;
 #endif
 
+void ProcessStageFrame()
+{
+    ProcessObjects();
+
+    if (cameraTarget > -1) {
+        if (cameraEnabled == 1) {
+            switch (cameraStyle) {
+                case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
+                case CAMERASTYLE_EXTENDED:
+                case CAMERASTYLE_EXTENDED_OFFSET_L:
+                case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
+                case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
+                default: break;
+            }
+        }
+        else {
+            SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
+        }
+    }
+
+    ProcessParallaxAutoScroll();
+    DrawStageGFX();
+}
+
+void ProcessFrozenStageFrame()
+{
+    ProcessFrozenObjects();
+
+    if (cameraTarget > -1) {
+        if (cameraEnabled == 1) {
+            switch (cameraStyle) {
+                case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
+                case CAMERASTYLE_EXTENDED:
+                case CAMERASTYLE_EXTENDED_OFFSET_L:
+                case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
+                case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
+                default: break;
+            }
+        }
+        else {
+            SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
+        }
+    }
+
+    DrawStageGFX();
+}
+
+#if !RETRO_REV00
+void Process2PStageFrame()
+{
+    Process2PObjects();
+
+    if (cameraTarget > -1) {
+        if (cameraEnabled == 1) {
+            switch (cameraStyle) {
+                case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
+                case CAMERASTYLE_EXTENDED:
+                case CAMERASTYLE_EXTENDED_OFFSET_L:
+                case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
+                case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
+                default: break;
+            }
+        }
+        else {
+            SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
+        }
+    }
+
+    ProcessParallaxAutoScroll();
+    DrawStageGFX();
+}
+#endif
+
 void InitFirstStage(void)
 {
     AbortPreload();
@@ -216,6 +289,11 @@ void ProcessStage(void)
             gfxIndexSizeOpaque  = 0;
             gfxVertexSizeOpaque = 0;
 #endif
+            ProcessStageFrame();
+#if RETRO_PLATFORM == RETRO_PS3
+            TransferRetroBuffer();
+            TransferRetroBuffer();
+#endif
             break;
 
         case STAGEMODE_NORMAL:
@@ -248,26 +326,7 @@ void ProcessStage(void)
             }
 
             // Update
-            ProcessObjects();
-
-            if (cameraTarget > -1) {
-                if (cameraEnabled == 1) {
-                    switch (cameraStyle) {
-                        case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
-                        case CAMERASTYLE_EXTENDED:
-                        case CAMERASTYLE_EXTENDED_OFFSET_L:
-                        case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
-                        case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
-                        default: break;
-                    }
-                }
-                else {
-                    SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
-                }
-            }
-
-            ProcessParallaxAutoScroll();
-            DrawStageGFX();
+            ProcessStageFrame();
             CheckStagePreload();
             break;
 
@@ -327,25 +386,7 @@ void ProcessStage(void)
             CheckKeyPress(&keyPress);
 
             // Update
-            ProcessFrozenObjects();
-
-            if (cameraTarget > -1) {
-                if (cameraEnabled == 1) {
-                    switch (cameraStyle) {
-                        case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
-                        case CAMERASTYLE_EXTENDED:
-                        case CAMERASTYLE_EXTENDED_OFFSET_L:
-                        case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
-                        case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
-                        default: break;
-                    }
-                }
-                else {
-                    SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
-                }
-            }
-
-            DrawStageGFX();
+            ProcessFrozenStageFrame();
             break;
 
 #if !RETRO_REV00
@@ -379,26 +420,7 @@ void ProcessStage(void)
             }
 
             // Update
-            Process2PObjects();
-
-            if (cameraTarget > -1) {
-                if (cameraEnabled == 1) {
-                    switch (cameraStyle) {
-                        case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
-                        case CAMERASTYLE_EXTENDED:
-                        case CAMERASTYLE_EXTENDED_OFFSET_L:
-                        case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
-                        case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
-                        default: break;
-                    }
-                }
-                else {
-                    SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
-                }
-            }
-
-            ProcessParallaxAutoScroll();
-            DrawStageGFX();
+            Process2PStageFrame();
             break;
 #endif
 
@@ -430,25 +452,7 @@ void ProcessStage(void)
                     frameCounter = 60 * stageMilliseconds / 100;
                 }
 
-                ProcessObjects();
-                if (cameraTarget > -1) {
-                    if (cameraEnabled == 1) {
-                        switch (cameraStyle) {
-                            case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
-                            case CAMERASTYLE_EXTENDED:
-                            case CAMERASTYLE_EXTENDED_OFFSET_L:
-                            case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
-                            case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
-                            default: break;
-                        }
-                    }
-                    else {
-                        SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
-                    }
-                }
-
-                DrawStageGFX();
-                ProcessParallaxAutoScroll();
+                ProcessStageFrame();
             }
 
             if (pauseEnabled && keyPress.start) {
@@ -517,25 +521,7 @@ void ProcessStage(void)
                 keyPress.C = false;
 
                 // Update
-                ProcessFrozenObjects();
-
-                if (cameraTarget > -1) {
-                    if (cameraEnabled == 1) {
-                        switch (cameraStyle) {
-                            case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
-                            case CAMERASTYLE_EXTENDED:
-                            case CAMERASTYLE_EXTENDED_OFFSET_L:
-                            case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
-                            case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
-                            default: break;
-                        }
-                    }
-                    else {
-                        SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
-                    }
-                }
-
-                DrawStageGFX();
+                ProcessFrozenStageFrame();
             }
             if (pauseEnabled && keyPress.start) {
                 stageMode = STAGEMODE_FROZEN;
@@ -572,26 +558,7 @@ void ProcessStage(void)
                 }
 
                 // Update
-                Process2PObjects();
-
-                if (cameraTarget > -1) {
-                    if (cameraEnabled == 1) {
-                        switch (cameraStyle) {
-                            case CAMERASTYLE_FOLLOW: SetPlayerScreenPosition(&objectEntityList[cameraTarget]); break;
-                            case CAMERASTYLE_EXTENDED:
-                            case CAMERASTYLE_EXTENDED_OFFSET_L:
-                            case CAMERASTYLE_EXTENDED_OFFSET_R: SetPlayerScreenPositionCDStyle(&objectEntityList[cameraTarget]); break;
-                            case CAMERASTYLE_HLOCKED: SetPlayerHLockedScreenPosition(&objectEntityList[cameraTarget]); break;
-                            default: break;
-                        }
-                    }
-                    else {
-                        SetPlayerLockedScreenPosition(&objectEntityList[cameraTarget]);
-                    }
-                }
-
-                DrawStageGFX();
-                ProcessParallaxAutoScroll();
+                Process2PStageFrame();
             }
 
             if (pauseEnabled && keyPress.start) {
