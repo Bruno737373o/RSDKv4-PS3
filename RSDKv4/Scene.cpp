@@ -1002,8 +1002,34 @@ void LoadStageFiles(void)
     LoadActLayout();
 
     Init3DFloorBuffer(0);
-    if (vsPlaying)
+    if (vsPlaying) {
         ResetMultiplayerInfo();
+
+        if (vsPlayerID == 0) { // Host
+            TransmitStageBreak();
+        }
+
+        // Final handshake: tell peer we are ready
+        int verify = true;
+        int increment = true;
+        if (vsPlayerID != 0) {
+            int ready = 1;
+            SendValue(&ready, &verify);
+        }
+        else {
+            int ready = 0;
+            int timeout   = 0;
+            while (ready == 0 && timeout < 300) {
+                ReceiveValue(&ready, &increment);
+#if RETRO_PLATFORM == RETRO_PS3
+                sys_timer_usleep(16000);
+#else
+                SDL_Delay(16);
+#endif
+                timeout++;
+            }
+        }
+    }
     ProcessStartupObjects();
 
     // End preloading once we are done with LoadStageFiles

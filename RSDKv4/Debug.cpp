@@ -548,6 +548,9 @@ void ProcessStageSelect()
             DrawTextMenu(&gameMenu[0], SCREEN_CENTERX - 4, 40);
             DrawTextMenu(&gameMenu[1], SCREEN_CENTERX + 100, 64);
             if (keyPress.start || keyPress.A) {
+                if (vsPlaying && vsPlayerID != 0)
+                    break; // Joiner cannot pick stage
+
                 debugMode         = keyDown.A;
                 stageMode         = STAGEMODE_LOAD;
                 Engine.gameMode   = ENGINE_MAINGAME;

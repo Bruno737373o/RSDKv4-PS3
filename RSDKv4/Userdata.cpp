@@ -1428,6 +1428,18 @@ void TransmitGlobal(int *globalValue, const char *globalName)
     }
 }
 
+void TransmitStageBreak()
+{
+    multiplayerDataOUT.type    = 3;
+    multiplayerDataOUT.data[0] = activeStageList;
+    multiplayerDataOUT.data[1] = stageListPosition;
+    if (Engine.onlineActive) {
+#if RETRO_USE_NETWORKING
+        SendData(true);
+#endif
+    }
+}
+
 void Receive2PVSData(MultiplayerData *data)
 {
     receiveReady = true;
@@ -1438,6 +1450,14 @@ void Receive2PVSData(MultiplayerData *data)
             memcpy(multiplayerDataIN.data, data->data, sizeof(Entity));
             break;
         case 2: globalVariables[data->data[0]] = data->data[1]; break;
+        case 3:
+            activeStageList   = data->data[0];
+            stageListPosition = data->data[1];
+            if (vsPlaying && vsPlayerID != 0 && Engine.gameMode == ENGINE_DEVMENU) {
+                stageMode       = STAGEMODE_LOAD;
+                Engine.gameMode = ENGINE_MAINGAME;
+            }
+            break;
     }
 }
 

@@ -49,6 +49,7 @@ uint64_t lastTime = 0;
 using asio::ip::udp;
 #endif
 
+
 typedef std::deque<ServerPacket> DataQueue;
 
 #if RETRO_IS_BIG_ENDIAN
@@ -484,14 +485,28 @@ private:
                 Receive2PVSMatchCode(room);
                 return;
             }
-            case SV_DATA_VERIFIED:
+            case SV_DATA_VERIFIED: {
+                ServerPacket send;
+                memset(&send, 0, sizeof(ServerPacket));
+                send.header = SV_RECEIVED;
+                SendServerPacket(send);
+                Receive2PVSData(&read_msg_.data.multiData);
+                return;
+            }
             case SV_DATA: {
                 Receive2PVSData(&read_msg_.data.multiData);
                 return;
             }
             case SV_RECEIVED: {
-                if (repeat.header == CL_DATA_VERIFIED)
+                if (repeat.header == CL_DATA_VERIFIED) {
                     repeat.header = CL_QUERY_VERIFICATION;
+                }
+                else {
+                    ServerPacket send;
+                    memset(&send, 0, sizeof(ServerPacket));
+                    send.header = SV_VERIFY_CLEAR;
+                    SendServerPacket(send);
+                }
                 return;
             }
             case SV_VERIFY_CLEAR: {
@@ -681,12 +696,15 @@ private:
 
     void handle_timer(const asio::error_code &ec)
     {
-        retried     = true;
+        if (ec || !session->running)
+            return;
+        retried = true;
         if (repeat.header != CL_REQUEST_CODE && repeat.header != CL_JOIN)
             repeat.room = room;
         StrCopy(repeat.game, networkGame);
         PrintLog("NetworkSession::handle_timer() - Retrying packet: header=0x%02X, retries=%u", repeat.header, retries);
-        if (retries++ == 10) {
+
+        if (retries < 10) {
 #if RETRO_IS_BIG_ENDIAN
             ServerPacket packet = repeat;
             SwapPacketEndian(&packet, false);
@@ -694,6 +712,7 @@ private:
 #else
             socket.send_to(asio::buffer(&repeat, sizeof(ServerPacket)), endpoint);
 #endif
+            retries++;
         }
     }
 
@@ -759,15 +778,28 @@ private:
                 Receive2PVSMatchCode(room);
                 return;
             }
-            case SV_DATA_VERIFIED:
-            // fallthrough
+            case SV_DATA_VERIFIED: {
+                ServerPacket send;
+                memset(&send, 0, sizeof(ServerPacket));
+                send.header = SV_RECEIVED;
+                SendServerPacket(send);
+                Receive2PVSData(&read_msg_.data.multiData);
+                return;
+            }
             case SV_DATA: {
                 Receive2PVSData(&read_msg_.data.multiData);
                 return;
             }
             case SV_RECEIVED: {
-                if (repeat.header == CL_DATA_VERIFIED)
+                if (repeat.header == CL_DATA_VERIFIED) {
                     repeat.header = CL_QUERY_VERIFICATION;
+                }
+                else {
+                    ServerPacket send;
+                    memset(&send, 0, sizeof(ServerPacket));
+                    send.header = SV_VERIFY_CLEAR;
+                    SendServerPacket(send);
+                }
                 return;
             }
             case SV_VERIFY_CLEAR: {
@@ -875,7 +907,15 @@ static void relayLoop(uint64_t arg)
                 }
 
                 if (roomIdx >= 0) {
-                    relayRooms[roomIdx].roomCode = (uint)rand() | 0x10;
+                    // RSDKv4 2P Match Code format:
+                    // Bits 4-11: Room/Seed/Settings data (passed in from host)
+                    uint settings = (uint)packet.data.multiData.data[0];
+                    SWAP_ENDIAN(settings); // settings were passed in multiData.data[0] as host-endian
+
+                    if (!(settings & 0xFF0))
+                        settings = 0x40; // Default: 4 matches
+
+                    relayRooms[roomIdx].roomCode     = ((uint)rand() & ~0x00000FF0) | (settings & 0x00000FF0);
                     relayRooms[roomIdx].player1_addr = clientAddr;
                     relayRooms[roomIdx].player1_id = (uint)rand() % 1000 + 1;
                     relayRooms[roomIdx].player1_active = true;

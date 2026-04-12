@@ -226,7 +226,7 @@ void MultiplayerScreen_Create(void *objPtr)
     self->ipPrefixLabel->y               = 0;
     self->ipPrefixLabel->z               = 16.0;
     self->ipPrefixLabel->state           = TEXTLABEL_STATE_IDLE;
-    SetStringToFont8(self->ipPrefixLabel->text, "IP:", FONT_LABEL);
+    SetStringToFont8(self->ipPrefixLabel->text, "ID:", FONT_LABEL);
     self->ipPrefixLabel->alignPtr(self->ipPrefixLabel, ALIGN_CENTER);
 
     for (int i = 0; i < 12; ++i) {
@@ -236,9 +236,7 @@ void MultiplayerScreen_Create(void *objPtr)
         self->ipDigitLabel[i]->scale           = 0.2;
         self->ipDigitLabel[i]->alpha           = 0;
 
-        int octet      = i / 3;
-        int posInOctet = i % 3;
-        self->ipDigitLabel[i]->x     = -100.0f + (octet * 64.0f) + (posInOctet * 16.0f);
+        self->ipDigitLabel[i]->x     = -88.0f + (i * 16.0f);
         self->ipDigitLabel[i]->y     = 0;
         self->ipDigitLabel[i]->z     = 16.0;
         self->ipDigitLabel[i]->state = TEXTLABEL_STATE_IDLE;
@@ -617,18 +615,16 @@ void MultiplayerScreen_Main(void *objPtr)
                 digits[i * 3 + 2] = ip[i] % 10;
             }
 
-            // Swap pairs to display in obfuscated format
-            for (int i = 0; i < 3; ++i) {
-                int t1             = digits[i * 2 + 0];
-                int t2             = digits[i * 2 + 1];
-                digits[i * 2 + 0]  = digits[10 - i * 2];
-                digits[i * 2 + 1]  = digits[11 - i * 2];
-                digits[10 - i * 2] = t1;
-                digits[11 - i * 2] = t2;
+            // Enhanced obfuscation: reverse digits
+            int obfuscated[12];
+            for (int i = 0; i < 12; ++i) {
+                obfuscated[i] = digits[11 - i];
             }
 
-            sprintf(ipBuf, "IP: %d%d%d.%d%d%d.%d%d%d.%d%d%d", digits[0], digits[1], digits[2], digits[3], digits[4], digits[5], digits[6], digits[7], digits[8], digits[9], digits[10],
-                    digits[11]);
+            sprintf(ipBuf, "ID: %c%c%c%c%c%c%c%c%c%c%c%c",
+                    obfuscated[0] + 'A', obfuscated[1] + 'A', obfuscated[2] + 'A', obfuscated[3] + 'A',
+                    obfuscated[4] + 'A', obfuscated[5] + 'A', obfuscated[6] + 'A', obfuscated[7] + 'A',
+                    obfuscated[8] + 'A', obfuscated[9] + 'A', obfuscated[10] + 'A', obfuscated[11] + 'A');
             SetStringToFont8(self->codeLabel[2]->text, ipBuf, self->codeLabel[2]->fontID);
             self->codeLabel[2]->alignPtr(self->codeLabel[2], ALIGN_CENTER);
 
@@ -1007,7 +1003,7 @@ void MultiplayerScreen_Main(void *objPtr)
                             }
                             self->ipDigits[digitIdx] = val;
                             char buf[2];
-                            sprintf(buf, "%d", val);
+                            sprintf(buf, "%c", val + 'A');
                             SetStringToFont8(self->ipDigitLabel[digitIdx]->text, buf, self->ipDigitLabel[digitIdx]->fontID);
                         }
                     }
@@ -1035,16 +1031,10 @@ void MultiplayerScreen_Main(void *objPtr)
                         if (self->selectedButton == MULTIPLAYERSCREEN_BUTTON_JOINROOM) {
                             PlaySfxByName("Menu Select", false);
 
-                            // Revert obfuscation before saving
+                            // Revert enhanced obfuscation: reverse back
                             int digits[12];
-                            memcpy(digits, self->ipDigits, sizeof(int) * 12);
-                            for (int i = 0; i < 3; ++i) {
-                                int t1             = digits[i * 2 + 0];
-                                int t2             = digits[i * 2 + 1];
-                                digits[i * 2 + 0]  = digits[10 - i * 2];
-                                digits[i * 2 + 1]  = digits[11 - i * 2];
-                                digits[10 - i * 2] = t1;
-                                digits[11 - i * 2] = t2;
+                            for (int i = 0; i < 12; ++i) {
+                                digits[11 - i] = self->ipDigits[i];
                             }
 
                             // Parse IP from digits
@@ -1161,22 +1151,16 @@ void MultiplayerScreen_Main(void *objPtr)
             // Initialize IP digits from current networkHost
             int ip[4] = { 0, 0, 0, 0 };
             sscanf(networkHost, "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
+            int tempDigits[12];
             for (int i = 0; i < 4; ++i) {
-                char buf[4];
-                sprintf(buf, "%03d", ip[i]);
-                self->ipDigits[i * 3 + 0] = buf[0] - '0';
-                self->ipDigits[i * 3 + 1] = buf[1] - '0';
-                self->ipDigits[i * 3 + 2] = buf[2] - '0';
+                tempDigits[i * 3 + 0] = (ip[i] / 100) % 10;
+                tempDigits[i * 3 + 1] = (ip[i] / 10) % 10;
+                tempDigits[i * 3 + 2] = ip[i] % 10;
             }
 
-            // Swap pairs to display in obfuscated format
-            for (int i = 0; i < 3; ++i) {
-                int t1                     = self->ipDigits[i * 2 + 0];
-                int t2                     = self->ipDigits[i * 2 + 1];
-                self->ipDigits[i * 2 + 0]  = self->ipDigits[10 - i * 2];
-                self->ipDigits[i * 2 + 1]  = self->ipDigits[11 - i * 2];
-                self->ipDigits[10 - i * 2] = t1;
-                self->ipDigits[11 - i * 2] = t2;
+            // Enhanced obfuscation: reverse digits
+            for (int i = 0; i < 12; ++i) {
+                self->ipDigits[i] = tempDigits[11 - i];
             }
 
             if (self->ipPrefixLabel) self->ipPrefixLabel->alpha = 0x100;
@@ -1184,12 +1168,12 @@ void MultiplayerScreen_Main(void *objPtr)
                 self->ipDigitLabel[i]->alpha     = 0x100;
                 self->ipDigitLabel[i]->useColors = false;
                 char buf[2];
-                sprintf(buf, "%d", self->ipDigits[i]);
+                sprintf(buf, "%c", self->ipDigits[i] + 'A');
                 SetStringToFont8(self->ipDigitLabel[i]->text, buf, self->ipDigitLabel[i]->fontID);
                 self->ipDigitLabel[i]->alignPtr(self->ipDigitLabel[i], ALIGN_CENTER);
             }
             for (int i = 0; i < 3; ++i) {
-                self->ipDotLabel[i]->alpha = 0x100;
+                self->ipDotLabel[i]->alpha = 0;
                 self->ipDotLabel[i]->alignPtr(self->ipDotLabel[i], ALIGN_CENTER);
             }
 
