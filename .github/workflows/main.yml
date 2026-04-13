@@ -1,0 +1,43 @@
+name: Build RSDKv4 PS3
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  v4-ps3:
+    runs-on: ubuntu-latest
+    container:
+      # Utilizamos esta imagem pois ela já contém o PSL1GHT SDK e o ppu-gcc configurados
+      image: dborth/ps3dev:latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Build RSDKv4
+        run: |
+          # Limpa compilações anteriores e inicia o processo via Makefile
+          make clean
+          make
+
+      - name: Create Artifact Folder
+        run: |
+          mkdir artifacts
+          # O Makefile do RSDKv4-PS3 costuma gerar arquivos .elf ou .self
+          # Copiamos os binários encontrados para a pasta de artefatos
+          cp *.elf *.self *.bin EBOOT.BIN ./artifacts/ 2>/dev/null || true
+
+      - name: Upload PS3 Build
+        uses: actions/upload-artifact@v4
+        with:
+          name: RSDKv4-PS3
+          path: artifacts/
+          
