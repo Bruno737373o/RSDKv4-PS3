@@ -13,8 +13,8 @@ jobs:
   v4-ps3:
     runs-on: ubuntu-latest
     container:
-      # Utilizamos esta imagem pois ela já contém o PSL1GHT SDK e o ppu-gcc configurados
-      image: dborth/ps3dev:latest
+      # Esta imagem já contém o ps3sdk (PSL1GHT) instalado em /usr/local/ps3dev
+      image: ghcr.io/ps3dev/ps3dev:master
 
     steps:
       - name: Checkout repository
@@ -22,22 +22,32 @@ jobs:
         with:
           submodules: recursive
 
+      - name: Install Build Tools
+        run: |
+          # A imagem é baseada em Alpine, instalamos o básico para o make funcionar
+          apk add --no-cache make gcc g++ bash
+
       - name: Build RSDKv4
         run: |
-          # Limpa compilações anteriores e inicia o processo via Makefile
+          # Configuramos as variáveis de ambiente que o ps3sdk exige
+          export PS3DEV=/usr/local/ps3dev
+          export PSL1GHT=$PS3DEV/ppu
+          export PATH=$PATH:$PS3DEV/bin:$PS3DEV/ppu/bin:$PS3DEV/spu/bin
+          
+          # Executa a compilação
           make clean
           make
+        shell: bash
 
       - name: Create Artifact Folder
         run: |
           mkdir artifacts
-          # O Makefile do RSDKv4-PS3 costuma gerar arquivos .elf ou .self
-          # Copiamos os binários encontrados para a pasta de artefatos
-          cp *.elf *.self *.bin EBOOT.BIN ./artifacts/ 2>/dev/null || true
+          # O RSDKv4 costuma gerar um EBOOT.BIN ou RSDKv4.elf
+          cp *.elf *.self *.bin EBOOT.BIN *.pkg ./artifacts/ 2>/dev/null || true
 
-      - name: Upload PS3 Build
+      - name: Upload Build
         uses: actions/upload-artifact@v4
         with:
-          name: RSDKv4-PS3
+          name: RSDKv4-PS3-Standalone
           path: artifacts/
           
